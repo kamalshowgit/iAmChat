@@ -1,0 +1,19 @@
+# Python cache/artifacts
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Virtual environments
+.venv/
+venv/
+env/
+myenv/
+
+# Django runtime files
+db.sqlite3
+staticfiles/
+
+# OS/editor
+.DS_Store
+.idea/
+.vscode/

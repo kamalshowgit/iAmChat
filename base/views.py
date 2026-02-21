@@ -30,6 +30,9 @@ def getToken(request):
     if not channel_name:
         return JsonResponse({'error': 'Missing channel name'}, status=400)
 
+    if app_id in {'', 'API'} or app_certificate in {'', 'appCertificate'}:
+        return JsonResponse({'error': 'Agora credentials are not configured'}, status=500)
+
     uid = random.SystemRandom().randint(1, 2147483647)
     expirationTimeInSeconds = 3600
     currentTimeStamp = int(time.time())

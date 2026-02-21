@@ -100,3 +100,43 @@ Feel free to customize and enhance the app's features according to your needs.
 If you encounter any issues or have questions, refer to the official Agora and Django documentation for help.
 
 Happy coding! 🚀
+
+## PythonAnywhere Production Setup
+
+1. Clone the latest code:
+   ```bash
+   cd ~
+   git clone https://github.com/kamalshowgit/iAmChat
+   cd iAmChat
+   ```
+
+2. Create/use virtualenv and install dependencies:
+   ```bash
+   mkvirtualenv --python=/usr/bin/python3.10 myenv
+   workon myenv
+   pip install -r requirements.txt
+   ```
+
+3. Configure environment variables in your WSGI file:
+   - `SECRET_KEY`
+   - `DJANGO_DEBUG=False`
+   - `DJANGO_ALLOWED_HOSTS=<your-username>.pythonanywhere.com`
+   - `DJANGO_CSRF_TRUSTED_ORIGINS=https://<your-username>.pythonanywhere.com`
+   - `AGORA_APP_ID=<your-id>`
+   - `AGORA_APP_CERTIFICATE=<your-cert>`
+
+4. Run migrations and collect static:
+   ```bash
+   python manage.py migrate
+   python manage.py collectstatic --noinput
+   ```
+
+5. In PythonAnywhere Web tab:
+   - Source code: `/home/<your-username>/iAmChat`
+   - Working directory: `/home/<your-username>/iAmChat`
+   - Virtualenv: `/home/<your-username>/.virtualenvs/myenv`
+   - Static mapping:
+     - URL: `/static/`
+     - Directory: `/home/<your-username>/iAmChat/staticfiles`
+
+6. Reload web app.
