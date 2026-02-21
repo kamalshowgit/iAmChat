@@ -2,44 +2,40 @@
 {% load static %}
 {% block content %}
 <main>
-  <section id="form-container">
-    <img id="logo" src="{% static 'images/chat-icon.png' %}" alt="iAMChat Logo"/>
+    <section id="form-container">
+        <img id="logo" src="{% static 'images/chat-icon.png' %}" alt="iAmChat Logo">
+        <h1>Join Meeting</h1>
+        <p class="subtext">Simple video call and chat for web and mobile.</p>
 
-    <div id="welcome-message">
-      <h1>Hello!</h1>
-      <h2>Let’s chat, laugh, and make memories together! 🎉</h2>
-    </div>
+        <form id="form">
+            <div class="field-wrapper">
+                <div class="form-field">
+                    <label for="room-field">Room</label>
+                    <input id="room-field" name="room" placeholder="e.g. TEAMSYNC" autocomplete="off">
+                </div>
 
-    <form id="form">
-      <div class="field-wrapper">
-        <div class="form-field">
-          <label>Room Tag:</label>
-          <input name="room" placeholder="Enter a room name..." style="text-transform:uppercase"/>
-        </div>
+                <div class="form-field">
+                    <label for="name-field">Name</label>
+                    <input id="name-field" name="name" placeholder="Your name" autocomplete="off">
+                </div>
 
-        <div class="form-field">
-          <label>Your Name:</label>
-          <input name="name" placeholder="Enter your name..." style="text-transform:uppercase"/>
-        </div>
-
-        <div class="form-field">
-          <input type="submit" value="Join Stream" />
-        </div>
-        <p id="form-error" style="display:none;color:#d24c55;font-weight:700;margin:0;"></p>
-      </div>
-    </form>
-  </section>
+                <div class="form-field">
+                    <input type="submit" value="Join Call">
+                </div>
+                <p id="form-error"></p>
+            </div>
+        </form>
+    </section>
 </main>
 
 <script>
-  // Handle form submission
-  let form = document.getElementById('form')
+const form = document.getElementById('form');
+const errorElement = document.getElementById('form-error');
 
-let handleSubmit = async (e) => {
+const handleSubmit = async (e) => {
     e.preventDefault()
-    const errorElement = document.getElementById('form-error')
-    let room = e.target.room.value.trim().toUpperCase()
-    let name = e.target.name.value.trim()
+    const room = e.target.room.value.trim().toUpperCase()
+    const name = e.target.name.value.trim()
 
     errorElement.style.display = 'none'
     errorElement.textContent = ''
@@ -50,38 +46,32 @@ let handleSubmit = async (e) => {
       return
     }
 
-    let response
-    let data
+    let response;
+    let data;
     try {
-      response = await fetch(`/get_token/?channel=${encodeURIComponent(room)}`)
-      data = await response.json()
+        response = await fetch(`/get_token/?channel=${encodeURIComponent(room)}`)
+        data = await response.json()
     } catch (error) {
-      errorElement.textContent = 'Network error. Please try again.'
-      errorElement.style.display = 'block'
-      return
+        errorElement.textContent = 'Network error. Please try again.'
+        errorElement.style.display = 'block'
+        return
     }
 
     if (!response.ok || !data.token || !data.uid || !data.app_id) {
-      errorElement.textContent = (data && data.error) || 'Failed to connect. Please try again.'
-      errorElement.style.display = 'block'
-      return
+        errorElement.textContent = (data && data.error) || 'Failed to connect. Please try again.'
+        errorElement.style.display = 'block'
+        return
     }
 
-    let UID = data.uid
-    let token = data.token
-    let appId = data.app_id
-
-    sessionStorage.setItem('UID', UID)
-    sessionStorage.setItem('token', token)
-    sessionStorage.setItem('appId', appId)
+    sessionStorage.setItem('UID', data.uid)
+    sessionStorage.setItem('token', data.token)
+    sessionStorage.setItem('appId', data.app_id)
     sessionStorage.setItem('room', room)
     sessionStorage.setItem('name', name)
 
     window.open('/room/', '_self')
-}
+};
 
-form.addEventListener('submit', handleSubmit)
+form.addEventListener('submit', handleSubmit);
 </script>
-
-
 {% endblock content %}

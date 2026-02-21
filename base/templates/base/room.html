@@ -3,37 +3,30 @@
 {% block content %}
 
 <main>
-    <section id="room-name-wrapper">
-        <p>Room Tag: <span id="room-name"></span></p>
-    </section>
+    <header id="room-header">
+        <div class="room-meta">
+            <h2 id="room-title">Room: <span id="room-name"></span></h2>
+            <p id="participant-count">Participants: 0</p>
+        </div>
+        <button id="chat-toggle-btn" type="button">Chat</button>
+    </header>
+
     <p id="room-error" role="alert"></p>
     <button id="audio-unlock-btn" type="button">Enable Audio</button>
 
     <section id="room-layout">
-        <section id="video-streams"></section>
+        <section id="video-streams" aria-live="polite"></section>
 
         <aside id="chat-panel">
             <div id="chat-header">
-                <h3>Room Chat</h3>
+                <h3>Chat</h3>
             </div>
-
             <div id="chat-messages"></div>
-
             <form id="chat-form">
-                <input id="chat-input" type="text" maxlength="500" placeholder="Type a message..." autocomplete="off" />
+                <input id="chat-input" type="text" maxlength="500" placeholder="Write a message" autocomplete="off">
                 <button id="chat-send-btn" type="submit">Send</button>
             </form>
         </aside>
-    </section>
-
-    <section id="activities-panel">
-        <h3 id="activities-title">Together Activity</h3>
-        <p id="activity-description">Pick an activity to begin.</p>
-        <div id="activity-actions">
-            <button id="new-activity-btn" type="button">New Activity</button>
-            <button id="focus-timer-btn" type="button">Start 15m Focus</button>
-            <span id="focus-timer-display"></span>
-        </div>
     </section>
 
     <section id="controls-wrapper" aria-label="Call controls">
@@ -54,7 +47,6 @@
     </section>
 </main>
 
-
 <script type="text/javascript" src="{% static 'assets/AgoraRTC_N-4.8.0.js' %}"></script>
-<script type="text/javascript" src="{% static 'js/streams.js' %}" ></script>
+<script type="text/javascript" src="{% static 'js/streams.js' %}"></script>
 {% endblock content %}
