@@ -8,7 +8,10 @@
             <h2 id="room-title">Room: <span id="room-name"></span></h2>
             <p id="participant-count">Participants: 0</p>
         </div>
-        <button id="chat-toggle-btn" type="button">Chat</button>
+        <div class="ribbon-actions">
+            <button id="chat-toggle-btn" type="button">Chat</button>
+            <button id="activity-toggle-btn" type="button">Tools</button>
+        </div>
     </header>
 
     <p id="room-error" role="alert"></p>
@@ -18,7 +21,7 @@
         <section id="video-streams" aria-live="polite"></section>
         <div id="reaction-layer" aria-hidden="true"></div>
 
-        <aside id="chat-panel">
+        <aside id="chat-panel" class="submenu-panel">
             <div id="chat-header">
                 <h3>Chat</h3>
             </div>
@@ -60,7 +63,7 @@
         <button class="reaction-btn" data-emoji="🔥" type="button">🔥</button>
     </section>
 
-    <section id="activity-panel" aria-label="Activity tools">
+    <section id="activity-panel" class="submenu-panel" aria-label="Activity tools">
         <h4>Activities</h4>
         <div class="activity-group">
             <label for="share-url">Share File/Link</label>

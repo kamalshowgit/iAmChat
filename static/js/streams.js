@@ -30,6 +30,8 @@ const roomError = document.getElementById('room-error');
 const audioUnlockButton = document.getElementById('audio-unlock-btn');
 const chatPanel = document.getElementById('chat-panel');
 const chatToggleButton = document.getElementById('chat-toggle-btn');
+const activityPanel = document.getElementById('activity-panel');
+const activityToggleButton = document.getElementById('activity-toggle-btn');
 const reactionLayer = document.getElementById('reaction-layer');
 
 const micButton = document.getElementById('mic-btn');
@@ -140,15 +142,14 @@ const syncVideoLayout = () => {
     const count = cards.length;
     const hasScreen = !!videoStreams.querySelector('.video-container.is-screen');
 
-    videoStreams.classList.remove('layout-1', 'layout-2', 'layout-couple', 'layout-many', 'layout-screen-share');
-    if (hasScreen) {
-        videoStreams.classList.add('layout-screen-share');
-    } else if (count <= 1) {
+    videoStreams.classList.remove('layout-1', 'layout-2', 'layout-4', 'layout-many', 'layout-screen-share');
+    if (hasScreen) videoStreams.classList.add('layout-screen-share');
+    else if (count <= 1) {
         videoStreams.classList.add('layout-1');
-    } else if (count === 2) {
-        videoStreams.classList.add('layout-couple');
-    } else if (count <= 4) {
+    } else if (count <= 2) {
         videoStreams.classList.add('layout-2');
+    } else if (count <= 4) {
+        videoStreams.classList.add('layout-4');
     } else {
         videoStreams.classList.add('layout-many');
     }
@@ -192,12 +193,19 @@ const removeVideoContainer = (userUid) => {
 const playVideoWithRetry = async (track, playerId, attempt = 0) => {
     if (!track) return;
     try {
-        const playerNode = document.getElementById(playerId);
-        if (!playerNode) throw new Error(`Missing player node ${playerId}`);
-        await Promise.resolve(track.play(playerNode));
+        await Promise.resolve(track.play(playerId));
         await new Promise((resolve) => setTimeout(resolve, 120));
         applyVideoHints(playerId);
     } catch (error) {
+        try {
+            const playerNode = document.getElementById(playerId);
+            if (playerNode) {
+                await Promise.resolve(track.play(playerNode));
+                await new Promise((resolve) => setTimeout(resolve, 120));
+                applyVideoHints(playerId);
+                return;
+            }
+        } catch (playElementError) {}
         if (attempt >= MAX_PLAY_RETRIES) {
             console.error('Video play failed:', error);
             setRoomError('A participant video could not start. Trying again...');
@@ -569,6 +577,13 @@ const sendSignatureNote = async () => {
 const toggleChatPanel = () => {
     if (!chatPanel) return;
     chatPanel.classList.toggle('is-open');
+    if (activityPanel) activityPanel.classList.remove('is-open');
+};
+
+const toggleActivityPanel = () => {
+    if (!activityPanel) return;
+    activityPanel.classList.toggle('is-open');
+    if (chatPanel) chatPanel.classList.remove('is-open');
 };
 
 const formatChatTime = (unixTime) => {
@@ -683,6 +698,7 @@ if (screenButton) screenButton.addEventListener('click', toggleScreenShare);
 if (leaveButton) leaveButton.addEventListener('click', leaveAndRemoveLocalStream);
 if (chatForm) chatForm.addEventListener('submit', sendMessage);
 if (chatToggleButton) chatToggleButton.addEventListener('click', toggleChatPanel);
+if (activityToggleButton) activityToggleButton.addEventListener('click', toggleActivityPanel);
 reactionButtons.forEach((btn) => btn.addEventListener('click', () => sendReaction(btn.dataset.emoji || '❤️')));
 if (shareLinkButton) shareLinkButton.addEventListener('click', shareLink);
 if (coinFlipButton) coinFlipButton.addEventListener('click', flipCoin);
