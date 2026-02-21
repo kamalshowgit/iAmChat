@@ -190,6 +190,28 @@ main {
     --tile-min: 320px;
 }
 
+#video-streams.layout-couple {
+    display: block;
+    position: relative;
+}
+
+#video-streams.layout-couple .video-container {
+    width: 100%;
+    min-height: calc(100vh - 260px);
+    aspect-ratio: auto;
+}
+
+#video-streams.layout-couple .video-container.local-user {
+    position: absolute;
+    right: 16px;
+    bottom: 16px;
+    width: min(28vw, 250px);
+    min-height: auto;
+    aspect-ratio: 4 / 3;
+    z-index: 8;
+    box-shadow: 0 12px 30px rgba(2, 6, 23, 0.55);
+}
+
 #video-streams.layout-4 {
     --tile-min: 300px;
 }
@@ -226,6 +248,19 @@ main {
     width: 100% !important;
     height: 100% !important;
     object-fit: cover;
+}
+
+.waiting-slot {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.waiting-content p {
+    margin: 0;
+    color: var(--muted);
+    font-size: 15px;
+    text-align: center;
 }
 
 .username-wrapper {
@@ -540,6 +575,16 @@ main {
         padding-bottom: 150px;
     }
 
+    #video-streams.layout-couple .video-container {
+        min-height: 56vh;
+    }
+
+    #video-streams.layout-couple .video-container.local-user {
+        width: min(34vw, 180px);
+        right: 10px;
+        bottom: 10px;
+    }
+
     #reactions-bar {
         left: 50%;
         transform: translateX(-50%);
@@ -564,6 +609,12 @@ main {
 
     .video-container {
         aspect-ratio: 4 / 3;
+    }
+
+    #video-streams.layout-couple .video-container.local-user {
+        width: min(40vw, 145px);
+        right: 8px;
+        bottom: 8px;
     }
 
     #controls-wrapper {

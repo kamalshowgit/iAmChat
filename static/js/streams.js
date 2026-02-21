@@ -11,6 +11,7 @@ const LINK_PREFIX = '__LINK__:';
 const ACTIVITY_PREFIX = '__ACT__:';
 const CHAT_POLL_MS = 2000;
 const MAX_PLAY_RETRIES = 8;
+const WAITING_SLOT_ID = 'waiting-remote-slot';
 
 let localAudioTrack = null;
 let localCameraTrack = null;
@@ -140,23 +141,27 @@ const applyVideoHints = (playerId) => {
 
 const getUidKey = (uid) => String(uid);
 
+const ensureWaitingSlot = () => {
+    if (!videoStreams) return;
+    if (document.getElementById(WAITING_SLOT_ID)) return;
+    const html = `
+        <article class="video-container waiting-slot" id="${WAITING_SLOT_ID}">
+            <div class="waiting-content">
+                <p>Waiting for your partner to join...</p>
+            </div>
+        </article>
+    `;
+    videoStreams.insertAdjacentHTML('beforeend', html);
+};
+
+const removeWaitingSlot = () => {
+    const slot = document.getElementById(WAITING_SLOT_ID);
+    if (slot) slot.remove();
+};
+
 const syncVideoLayout = () => {
     if (!videoStreams) return;
-    const cards = videoStreams.querySelectorAll('.video-container');
-    const count = cards.length;
     const hasScreen = !!videoStreams.querySelector('.video-container.is-screen');
-
-    videoStreams.classList.remove('layout-1', 'layout-2', 'layout-4', 'layout-many', 'layout-screen-share');
-    if (hasScreen) videoStreams.classList.add('layout-screen-share');
-    else if (count <= 1) {
-        videoStreams.classList.add('layout-1');
-    } else if (count <= 2) {
-        videoStreams.classList.add('layout-2');
-    } else if (count <= 4) {
-        videoStreams.classList.add('layout-4');
-    } else {
-        videoStreams.classList.add('layout-many');
-    }
 
     // Derive count from live Agora state to avoid desktop/mobile drift.
     const liveRemoteCount = Array.isArray(client.remoteUsers)
@@ -164,6 +169,25 @@ const syncVideoLayout = () => {
         : Object.keys(remoteUsers).length;
     const localCount = localJoined ? 1 : 0;
     const computedCount = localCount + liveRemoteCount;
+
+    if (!hasScreen && localJoined && liveRemoteCount === 0) ensureWaitingSlot();
+    else removeWaitingSlot();
+
+    const cards = videoStreams.querySelectorAll('.video-container');
+    const count = cards.length;
+
+    videoStreams.classList.remove('layout-1', 'layout-2', 'layout-couple', 'layout-4', 'layout-many', 'layout-screen-share');
+    if (hasScreen) videoStreams.classList.add('layout-screen-share');
+    else if (count <= 1) {
+        videoStreams.classList.add('layout-1');
+    } else if (count === 2) {
+        videoStreams.classList.add('layout-couple');
+    } else if (count <= 4) {
+        videoStreams.classList.add('layout-4');
+    } else {
+        videoStreams.classList.add('layout-many');
+    }
+
     if (participantCount) participantCount.textContent = `Participants: ${computedCount}`;
 };
 
