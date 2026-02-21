@@ -25,6 +25,25 @@ class RoomMemberApiTests(TestCase):
         self.assertEqual(delete_response.status_code, 200)
         self.assertEqual(RoomMember.objects.count(), 0)
 
+    def test_list_members(self):
+        self.client.post(
+            '/create_member/',
+            data='{"name":"Alex","UID":"123","room_name":"ROOM1"}',
+            content_type='application/json',
+        )
+        self.client.post(
+            '/create_member/',
+            data='{"name":"Sam","UID":"456","room_name":"ROOM1"}',
+            content_type='application/json',
+        )
+
+        response = self.client.get('/list_members/', {'room_name': 'ROOM1'})
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(len(payload['members']), 2)
+        names = sorted(member['name'] for member in payload['members'])
+        self.assertEqual(names, ['Alex', 'Sam'])
+
 
 class ChatApiTests(TestCase):
     def test_create_and_fetch_messages(self):

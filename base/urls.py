@@ -9,6 +9,7 @@ urlpatterns = [
 
     path('create_member/', views.createMember),
     path('get_member/', views.getMember),
+    path('list_members/', views.listMembers),
     path('delete_member/', views.deleteMember, name='delete_member'),
     path('create_message/', views.createMessage),
     path('get_messages/', views.getMessages),

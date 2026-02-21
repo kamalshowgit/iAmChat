@@ -21,6 +21,9 @@ let chatPoller = null;
 let remoteReconcilePoller = null;
 let lastMessageId = 0;
 let pendingAudioTracks = [];
+let memberNameCache = {};
+let localJoined = false;
+let lastMemberSyncAt = 0;
 
 const token = TOKEN_RAW && TOKEN_RAW !== 'null' && TOKEN_RAW !== 'undefined' ? TOKEN_RAW : null;
 
@@ -135,7 +138,7 @@ const applyVideoHints = (playerId) => {
     video.muted = true;
 };
 
-const getPlayerNode = (userUid) => document.getElementById(`user-${userUid}`);
+const getUidKey = (uid) => String(uid);
 
 const syncVideoLayout = () => {
     if (!videoStreams) return;
@@ -155,15 +158,25 @@ const syncVideoLayout = () => {
         videoStreams.classList.add('layout-many');
     }
 
-    // Count local user + unique remote users for stable participant count.
-    const remoteCount = Object.keys(remoteUsers).length;
-    const localCount = UID ? 1 : 0;
-    const computedCount = Math.max(count, remoteCount + localCount);
+    // Derive count from live Agora state to avoid desktop/mobile drift.
+    const liveRemoteCount = Array.isArray(client.remoteUsers)
+        ? client.remoteUsers.length
+        : Object.keys(remoteUsers).length;
+    const localCount = localJoined ? 1 : 0;
+    const computedCount = localCount + liveRemoteCount;
     if (participantCount) participantCount.textContent = `Participants: ${computedCount}`;
 };
 
 const ensureVideoContainer = (userUid, displayName, isLocal = false, isScreen = false) => {
     if (!videoStreams) return;
+    const uidKey = getUidKey(userUid);
+    const incomingName = (displayName || '').trim();
+    if (incomingName && !incomingName.startsWith('Participant ')) {
+        memberNameCache[uidKey] = incomingName;
+    }
+    const resolvedName =
+        memberNameCache[uidKey] || incomingName || `Participant ${uidKey}`;
+
     const id = `user-container-${userUid}`;
     const existing = document.getElementById(id);
     if (existing) {
@@ -171,13 +184,13 @@ const ensureVideoContainer = (userUid, displayName, isLocal = false, isScreen = 
         existing.classList.toggle('is-screen', isScreen);
         const nameNode = existing.querySelector('.username-wrapper');
         if (nameNode) {
-            nameNode.textContent = `${displayName || 'Guest'}${isScreen ? ' · Screen' : ''}`;
+            nameNode.textContent = `${resolvedName}${isScreen ? ' · Screen' : ''}`;
         }
     } else {
         const html = `
             <article class="video-container ${isLocal ? 'local-user' : ''} ${isScreen ? 'is-screen' : ''}" id="${id}">
                 <div class="video-player" id="user-${userUid}"></div>
-                <div class="username-wrapper">${escapeHtml(displayName || 'Guest')}${isScreen ? ' · Screen' : ''}</div>
+                <div class="username-wrapper">${escapeHtml(resolvedName)}${isScreen ? ' · Screen' : ''}</div>
             </article>
         `;
         videoStreams.insertAdjacentHTML('beforeend', html);
@@ -194,10 +207,10 @@ const removeVideoContainer = (userUid) => {
 const playVideoWithRetry = async (track, playerId, attempt = 0) => {
     if (!track) return;
     try {
-        try { track.stop(); } catch (stopError) {}
         await Promise.resolve(track.play(playerId));
         await new Promise((resolve) => setTimeout(resolve, 120));
         applyVideoHints(playerId);
+        if (attempt > 0) setRoomError('');
     } catch (error) {
         try {
             const playerNode = document.getElementById(playerId);
@@ -241,6 +254,38 @@ const getMember = async (user) => {
     } catch (error) {
         return { name: 'Guest' };
     }
+};
+
+const listMembers = async () => {
+    try {
+        const response = await fetch(`/list_members/?room_name=${CHANNEL}`);
+        if (!response.ok) return [];
+        const payload = await response.json();
+        return Array.isArray(payload.members) ? payload.members : [];
+    } catch (error) {
+        return [];
+    }
+};
+
+const refreshMemberNameCache = async (force = false) => {
+    const now = Date.now();
+    if (!force && now - lastMemberSyncAt < 2500) return;
+    lastMemberSyncAt = now;
+
+    const members = await listMembers();
+    for (let i = 0; i < members.length; i++) {
+        const uidKey = getUidKey(members[i].uid);
+        const name = String(members[i].name || '').trim();
+        if (name) memberNameCache[uidKey] = name;
+    }
+};
+
+const shouldReplayVideo = (playerId) => {
+    const player = document.getElementById(playerId);
+    if (!player) return true;
+    const video = player.querySelector('video');
+    if (!video) return true;
+    return video.readyState < 2;
 };
 
 const deleteMember = async () => {
@@ -296,16 +341,23 @@ const subscribeWithRetry = async (user, mediaType, attempt = 0) => {
 };
 
 const handleUserPublished = async (user, mediaType) => {
-    remoteUsers[user.uid] = user;
+    const uidKey = getUidKey(user.uid);
+    remoteUsers[uidKey] = user;
     const subscribed = await subscribeWithRetry(user, mediaType);
     if (!subscribed) return;
 
     if (mediaType === 'video') {
         const isScreen = looksLikeScreenTrack(user.videoTrack);
-        ensureVideoContainer(user.uid, `Participant ${user.uid}`, false, isScreen);
+        const cachedName = memberNameCache[uidKey] || `Participant ${uidKey}`;
+        ensureVideoContainer(user.uid, cachedName, false, isScreen);
         await playVideoWithRetry(user.videoTrack, `user-${user.uid}`);
-        const member = await getMember(user);
-        ensureVideoContainer(user.uid, member.name, false, isScreen);
+        if (!memberNameCache[uidKey]) {
+            const member = await getMember(user);
+            if (member.name && member.name !== 'Guest') {
+                memberNameCache[uidKey] = member.name;
+            }
+        }
+        ensureVideoContainer(user.uid, memberNameCache[uidKey] || cachedName, false, isScreen);
     }
 
     if (mediaType === 'audio') {
@@ -318,17 +370,25 @@ const handleUserPublished = async (user, mediaType) => {
 };
 
 const reconcileRemoteVideos = async () => {
-    // Some desktop browsers occasionally miss publish/play transitions.
-    // Reconcile from client.remoteUsers so everyone stays visible.
-    const currentRemoteUsers = client.remoteUsers || [];
+    // Reconcile from live Agora state so desktop/mobile stay in sync.
+    const currentRemoteUsers = Array.isArray(client.remoteUsers) ? client.remoteUsers : [];
+    const nextRemoteUsers = {};
+    await refreshMemberNameCache();
+
     for (let i = 0; i < currentRemoteUsers.length; i++) {
         const remote = currentRemoteUsers[i];
-        remoteUsers[remote.uid] = remote;
+        const uidKey = getUidKey(remote.uid);
+        nextRemoteUsers[uidKey] = remote;
+
         if (remote.videoTrack) {
             const isScreen = looksLikeScreenTrack(remote.videoTrack);
-            ensureVideoContainer(remote.uid, `Participant ${remote.uid}`, false, isScreen);
-            await playVideoWithRetry(remote.videoTrack, `user-${remote.uid}`);
+            ensureVideoContainer(remote.uid, memberNameCache[uidKey] || `Participant ${uidKey}`, false, isScreen);
+            const playerId = `user-${remote.uid}`;
+            if (shouldReplayVideo(playerId)) {
+                await playVideoWithRetry(remote.videoTrack, playerId);
+            }
         }
+
         if (remote.audioTrack) {
             try {
                 await Promise.resolve(remote.audioTrack.play());
@@ -337,6 +397,14 @@ const reconcileRemoteVideos = async () => {
             }
         }
     }
+
+    for (const uidKey of Object.keys(remoteUsers)) {
+        if (!nextRemoteUsers[uidKey]) {
+            removeVideoContainer(uidKey);
+        }
+    }
+    remoteUsers = nextRemoteUsers;
+    syncVideoLayout();
 };
 
 const handleUserUnpublished = (user, mediaType) => {
@@ -344,7 +412,9 @@ const handleUserUnpublished = (user, mediaType) => {
 };
 
 const handleUserLeft = (user) => {
-    delete remoteUsers[user.uid];
+    const uidKey = getUidKey(user.uid);
+    delete remoteUsers[uidKey];
+    delete memberNameCache[uidKey];
     removeVideoContainer(user.uid);
 };
 
@@ -374,6 +444,7 @@ const joinAndDisplayLocalStream = async () => {
     const normalizedUid = Number.isFinite(Number(UID)) ? Number(UID) : UID;
     try {
         UID = await client.join(APP_ID, CHANNEL, token, normalizedUid);
+        localJoined = true;
     } catch (error) {
         console.error('Join failed:', error);
         setRoomError('Unable to connect to room.');
@@ -387,6 +458,8 @@ const joinAndDisplayLocalStream = async () => {
     }
 
     const member = await createMember();
+    memberNameCache[getUidKey(UID)] = member.name || NAME;
+    await refreshMemberNameCache(true);
     ensureVideoContainer(UID, member.name || NAME, true, false);
     if (localCameraTrack) await playVideoWithRetry(localCameraTrack, `user-${UID}`);
 
@@ -430,7 +503,7 @@ const stopScreenShare = async (fromEndedEvent = false) => {
 
     ensureVideoContainer(UID, NAME, true, false);
     if (localCameraTrack) {
-        await playVideoWithRetry(localCameraTrack, `user-${UID}`, true);
+        await playVideoWithRetry(localCameraTrack, `user-${UID}`);
         await client.publish(localCameraTrack);
     }
     if (!fromEndedEvent) setRoomError('');
@@ -694,6 +767,7 @@ const startChatPolling = () => {
 
 const startRemoteReconcilePolling = () => {
     if (remoteReconcilePoller) return;
+    reconcileRemoteVideos();
     remoteReconcilePoller = setInterval(() => {
         reconcileRemoteVideos();
     }, 2000);
@@ -717,6 +791,9 @@ const leaveAndRemoveLocalStream = async () => {
         await client.leave();
     } catch (error) {}
 
+    localJoined = false;
+    remoteUsers = {};
+    memberNameCache = {};
     await deleteMember();
     window.open('/', '_self');
 };

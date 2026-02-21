@@ -96,6 +96,20 @@ def getMember(request):
     return JsonResponse({'name': member.name})
 
 
+@require_GET
+def listMembers(request):
+    room_name = (request.GET.get('room_name') or '').strip().upper()
+    if not room_name:
+        return JsonResponse({'error': 'room_name is required'}, status=400)
+
+    members = (
+        RoomMember.objects.filter(room_name=room_name)
+        .order_by('id')
+        .values('uid', 'name')
+    )
+    return JsonResponse({'members': list(members)})
+
+
 @csrf_exempt
 @require_http_methods(['POST'])
 def deleteMember(request):
