@@ -112,6 +112,9 @@ def deleteMember(request):
 
     deleted, _ = RoomMember.objects.filter(uid=uid, room_name=room_name).delete()
     if deleted:
+        # If room becomes empty, clear chat history for a fresh next session.
+        if not RoomMember.objects.filter(room_name=room_name).exists():
+            ChatMessage.objects.filter(room_name=room_name).delete()
         return JsonResponse({'status': 'Member deleted'})
     return JsonResponse({'error': 'Member not found'}, status=404)
 

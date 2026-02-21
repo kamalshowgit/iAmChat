@@ -55,3 +55,21 @@ class RoomSessionTests(TestCase):
         )
         self.assertEqual(create_response.status_code, 200)
         self.assertEqual(ChatMessage.objects.filter(room_name='ROOMX').count(), 0)
+
+    def test_chat_clears_when_last_member_leaves(self):
+        self.client.post(
+            '/create_member/',
+            data='{"name":"Alex","UID":"111","room_name":"ROOMY"}',
+            content_type='application/json',
+        )
+        ChatMessage.objects.create(room_name='ROOMY', uid='111', name='Alex', message='hello')
+        self.assertEqual(ChatMessage.objects.filter(room_name='ROOMY').count(), 1)
+
+        delete_response = self.client.post(
+            '/delete_member/',
+            data='{"UID":"111","room_name":"ROOMY"}',
+            content_type='application/json',
+        )
+        self.assertEqual(delete_response.status_code, 200)
+        self.assertEqual(RoomMember.objects.filter(room_name='ROOMY').count(), 0)
+        self.assertEqual(ChatMessage.objects.filter(room_name='ROOMY').count(), 0)

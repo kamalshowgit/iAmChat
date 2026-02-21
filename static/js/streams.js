@@ -106,7 +106,7 @@ const looksLikeScreenTrack = (track) => {
     return label.includes('screen') || label.includes('display') || label.includes('window');
 };
 
-const applyVideoHints = (playerId, muted = false) => {
+const applyVideoHints = (playerId) => {
     const player = document.getElementById(playerId);
     if (!player) return;
     const video = player.querySelector('video');
@@ -114,7 +114,8 @@ const applyVideoHints = (playerId, muted = false) => {
     video.setAttribute('playsinline', 'true');
     video.setAttribute('webkit-playsinline', 'true');
     video.autoplay = true;
-    video.muted = muted;
+    // Keep element muted for autoplay reliability; remote audio is handled by audioTrack.play().
+    video.muted = true;
 };
 
 const syncVideoLayout = () => {
@@ -136,7 +137,11 @@ const syncVideoLayout = () => {
         videoStreams.classList.add('layout-many');
     }
 
-    if (participantCount) participantCount.textContent = `Participants: ${count}`;
+    // Count local user + unique remote users for stable participant count.
+    const remoteCount = Object.keys(remoteUsers).length;
+    const localCount = UID ? 1 : 0;
+    const computedCount = Math.max(count, remoteCount + localCount);
+    if (participantCount) participantCount.textContent = `Participants: ${computedCount}`;
 };
 
 const ensureVideoContainer = (userUid, displayName, isLocal = false, isScreen = false) => {
@@ -161,19 +166,20 @@ const removeVideoContainer = (userUid) => {
     syncVideoLayout();
 };
 
-const playVideoWithRetry = async (track, playerId, muted = false, attempt = 0) => {
+const playVideoWithRetry = async (track, playerId, attempt = 0) => {
     if (!track) return;
     try {
         await Promise.resolve(track.play(playerId));
         await new Promise((resolve) => setTimeout(resolve, 120));
-        applyVideoHints(playerId, muted);
+        applyVideoHints(playerId);
     } catch (error) {
         if (attempt >= MAX_PLAY_RETRIES) {
             console.error('Video play failed:', error);
+            setRoomError('A participant video could not start. Trying again...');
             return;
         }
         setTimeout(() => {
-            playVideoWithRetry(track, playerId, muted, attempt + 1);
+            playVideoWithRetry(track, playerId, attempt + 1);
         }, 220 * (attempt + 1));
     }
 };
@@ -260,10 +266,12 @@ const handleUserPublished = async (user, mediaType) => {
     if (!subscribed) return;
 
     if (mediaType === 'video') {
-        const member = await getMember(user);
         const isScreen = looksLikeScreenTrack(user.videoTrack);
+        // Render container first to avoid waiting on backend name lookup.
+        ensureVideoContainer(user.uid, `Participant ${user.uid}`, false, isScreen);
+        const member = await getMember(user);
         ensureVideoContainer(user.uid, member.name, false, isScreen);
-        await playVideoWithRetry(user.videoTrack, `user-${user.uid}`, false);
+        await playVideoWithRetry(user.videoTrack, `user-${user.uid}`);
     }
 
     if (mediaType === 'audio') {
@@ -307,8 +315,9 @@ const joinAndDisplayLocalStream = async () => {
         if (state === 'CONNECTED') setRoomError('');
     });
 
+    const normalizedUid = Number.isFinite(Number(UID)) ? Number(UID) : UID;
     try {
-        UID = await client.join(APP_ID, CHANNEL, token, UID);
+        UID = await client.join(APP_ID, CHANNEL, token, normalizedUid);
     } catch (error) {
         console.error('Join failed:', error);
         setRoomError('Unable to connect to room.');
@@ -323,7 +332,7 @@ const joinAndDisplayLocalStream = async () => {
 
     const member = await createMember();
     ensureVideoContainer(UID, member.name || NAME, true, false);
-    if (localCameraTrack) await playVideoWithRetry(localCameraTrack, `user-${UID}`, true);
+    if (localCameraTrack) await playVideoWithRetry(localCameraTrack, `user-${UID}`);
 
     try {
         await publishCurrentTracks();
@@ -397,7 +406,7 @@ const startScreenShare = async () => {
     setControlState(screenButton, true);
     setControlEnabled(cameraButton, false);
     ensureVideoContainer(UID, NAME, true, true);
-    await playVideoWithRetry(localScreenTrack, `user-${UID}`, true);
+    await playVideoWithRetry(localScreenTrack, `user-${UID}`);
 
     localScreenTrack.on('track-ended', async () => {
         await stopScreenShare(true);
