@@ -36,18 +36,21 @@
         </div>
     </section>
 
-    <section id="controls-wrapper">
-        <div class="icon-wrapper">
-            <img class="control-icon" id="mic-btn" src="{% static 'images/microphone.svg' %}" />
-        </div>
+    <section id="controls-wrapper" aria-label="Call controls">
+        <button class="control-btn" id="mic-btn" type="button" aria-label="Toggle microphone" aria-pressed="false">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 14a3 3 0 0 0 3-3V6a3 3 0 1 0-6 0v5a3 3 0 0 0 3 3Zm5-3a1 1 0 1 0-2 0 3 3 0 1 1-6 0 1 1 0 1 0-2 0 5 5 0 0 0 4 4.9V20H9a1 1 0 1 0 0 2h6a1 1 0 1 0 0-2h-2v-1.1A5 5 0 0 0 17 11Z"/></svg>
+            <span>Mic</span>
+        </button>
 
-        <div class="icon-wrapper">
-            <img class="control-icon" id="camera-btn" src="{% static 'images/video.svg' %}" />
-        </div>
+        <button class="control-btn" id="camera-btn" type="button" aria-label="Toggle camera" aria-pressed="false">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 8V7a3 3 0 0 0-3-3H6A3 3 0 0 0 3 7v10a3 3 0 0 0 3 3h6a3 3 0 0 0 3-3v-1l4 3a1 1 0 0 0 1-1V6a1 1 0 0 0-1-1l-4 3Zm3 7.06-3-2.25v-1.62l3-2.25v6.12Z"/></svg>
+            <span>Camera</span>
+        </button>
 
-        <div class="icon-wrapper">
-            <img class="control-icon" id="leave-btn" src="{% static 'images/leave.svg' %}" />
-        </div>
+        <button class="control-btn danger" id="leave-btn" type="button" aria-label="Leave call">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 10.3c0 1.9-2.2 3.2-3.9 2.2l-1.5-.9a1 1 0 0 0-.52-.14H8.9a1 1 0 0 0-.52.14l-1.5.9C5.2 13.5 3 12.2 3 10.3 3 7.9 7.2 6 12 6s9 1.9 9 4.3ZM9 14h6a1 1 0 1 1 0 2H9a1 1 0 1 1 0-2Z"/></svg>
+            <span>Leave</span>
+        </button>
     </section>
 </main>
 
