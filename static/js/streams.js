@@ -9,13 +9,71 @@ let NAME = sessionStorage.getItem('name') || 'Guest'
 const client = AgoraRTC.createClient({mode:'rtc', codec:'vp8'})
 
 let localTracks = []
+let localAudioTrack = null
+let localVideoTrack = null
 let remoteUsers = {}
 let chatPoller = null
 let lastMessageId = 0
 const CHAT_POLL_MS = 2000
+const videoStreams = document.getElementById('video-streams')
+
+let setRoomError = (message) => {
+    const errorNode = document.getElementById('room-error')
+    if (!errorNode) return
+    errorNode.textContent = message
+    errorNode.style.display = message ? 'block' : 'none'
+}
+
+let syncVideoLayout = () => {
+    if (!videoStreams) return
+    const count = videoStreams.querySelectorAll('.video-container').length
+    videoStreams.classList.remove('layout-1', 'layout-2', 'layout-3', 'layout-4', 'layout-many')
+    if (count <= 1) videoStreams.classList.add('layout-1')
+    else if (count === 2) videoStreams.classList.add('layout-2')
+    else if (count === 3) videoStreams.classList.add('layout-3')
+    else if (count === 4) videoStreams.classList.add('layout-4')
+    else videoStreams.classList.add('layout-many')
+}
+
+let setControlEnabled = (id, enabled) => {
+    const control = document.getElementById(id)
+    if (!control) return
+    control.style.opacity = enabled ? '1' : '0.45'
+    control.style.pointerEvents = enabled ? 'auto' : 'none'
+}
+
+let setupLocalTracks = async () => {
+    const setupErrors = []
+    try {
+        localAudioTrack = await AgoraRTC.createMicrophoneAudioTrack()
+    } catch (error) {
+        console.error('Microphone track failed', error)
+        setupErrors.push('microphone')
+    }
+
+    try {
+        localVideoTrack = await AgoraRTC.createCameraVideoTrack()
+    } catch (error) {
+        console.error('Camera track failed', error)
+        setupErrors.push('camera')
+    }
+
+    localTracks = [localAudioTrack, localVideoTrack].filter(Boolean)
+    setControlEnabled('mic-btn', Boolean(localAudioTrack))
+    setControlEnabled('camera-btn', Boolean(localVideoTrack))
+
+    if (setupErrors.length) {
+        setRoomError(`Unable to access ${setupErrors.join(' and ')}. You can still join with available devices.`)
+    } else {
+        setRoomError('')
+    }
+
+    return localTracks
+}
 
 let joinAndDisplayLocalStream = async () => {
     if (!APP_ID || !TOKEN || !CHANNEL || !UID) {
+        setRoomError('Session expired. Please join the room again.')
         window.open('/', '_self')
         return
     }
@@ -29,10 +87,17 @@ let joinAndDisplayLocalStream = async () => {
         UID = await client.join(APP_ID, CHANNEL, TOKEN, UID)
     }catch(error){
         console.error(error)
+        setRoomError('Unable to connect to the call. Check your network and try again.')
         window.open('/', '_self')
+        return
     }
-    
-    localTracks = await AgoraRTC.createMicrophoneAndCameraTracks()
+
+    await setupLocalTracks()
+    if (!localTracks.length) {
+        setRoomError('Camera and microphone access failed. Allow permissions and retry.')
+        await client.leave()
+        return
+    }
 
     let member = await createMember()
 
@@ -41,16 +106,24 @@ let joinAndDisplayLocalStream = async () => {
                      <div class="username-wrapper"><span class="user-name">${escapeHtml(member.name || NAME)}</span></div>
                   </div>`
     
-    document.getElementById('video-streams').insertAdjacentHTML('beforeend', player)
-    localTracks[1].play(`user-${UID}`)
-    await client.publish([localTracks[0], localTracks[1]])
+    videoStreams.insertAdjacentHTML('beforeend', player)
+    syncVideoLayout()
+    if (localVideoTrack) {
+        localVideoTrack.play(`user-${UID}`)
+    }
+    await client.publish(localTracks)
     await fetchMessages(true)
     startChatPolling()
 }
 
 let handleUserJoined = async (user, mediaType) => {
     remoteUsers[user.uid] = user
-    await client.subscribe(user, mediaType)
+    try {
+        await client.subscribe(user, mediaType)
+    } catch (error) {
+        console.error('Subscribe failed', error)
+        return
+    }
 
     if (mediaType === 'video'){
         let player = document.getElementById(`user-container-${user.uid}`)
@@ -65,12 +138,21 @@ let handleUserJoined = async (user, mediaType) => {
             <div class="username-wrapper"><span class="user-name">${escapeHtml(member.name || 'Guest')}</span></div>
         </div>`
 
-        document.getElementById('video-streams').insertAdjacentHTML('beforeend', player)
-        user.videoTrack.play(`user-${user.uid}`)
+        videoStreams.insertAdjacentHTML('beforeend', player)
+        syncVideoLayout()
+        try {
+            user.videoTrack.play(`user-${user.uid}`)
+        } catch (error) {
+            console.error('Remote video play failed', error)
+        }
     }
 
     if (mediaType === 'audio'){
-        user.audioTrack.play()
+        try {
+            user.audioTrack.play()
+        } catch (error) {
+            console.error('Remote audio play failed', error)
+        }
     }
 }
 
@@ -79,6 +161,7 @@ let handleUserLeft = async (user) => {
     let memberNode = document.getElementById(`user-container-${user.uid}`)
     if (memberNode) {
         memberNode.remove()
+        syncVideoLayout()
     }
 }
 
@@ -88,7 +171,7 @@ let leaveAndRemoveLocalStream = async () => {
         chatPoller = null
     }
 
-    for (let i=0; localTracks.length > i; i++){
+    for (let i = 0; i < localTracks.length; i++){
         localTracks[i].stop()
         localTracks[i].close()
     }
@@ -105,23 +188,25 @@ let setMutedState = (element, isMuted) => {
 }
 
 let toggleCamera = async (e) => {
+    if (!localVideoTrack) return
     const target = e.currentTarget
-    if(localTracks[1].muted){
-        await localTracks[1].setMuted(false)
+    if(localVideoTrack.muted){
+        await localVideoTrack.setMuted(false)
         setMutedState(target, false)
     }else{
-        await localTracks[1].setMuted(true)
+        await localVideoTrack.setMuted(true)
         setMutedState(target, true)
     }
 }
 
 let toggleMic = async (e) => {
+    if (!localAudioTrack) return
     const target = e.currentTarget
-    if(localTracks[0].muted){
-        await localTracks[0].setMuted(false)
+    if(localAudioTrack.muted){
+        await localAudioTrack.setMuted(false)
         setMutedState(target, false)
     }else{
-        await localTracks[0].setMuted(true)
+        await localAudioTrack.setMuted(true)
         setMutedState(target, true)
     }
 }
@@ -268,6 +353,8 @@ let startChatPolling = () => {
 window.addEventListener("beforeunload",deleteMember);
 
 joinAndDisplayLocalStream()
+syncVideoLayout()
+window.addEventListener('resize', syncVideoLayout)
 
 document.getElementById('leave-btn').addEventListener('click', leaveAndRemoveLocalStream)
 document.getElementById('camera-btn').addEventListener('click', toggleCamera)

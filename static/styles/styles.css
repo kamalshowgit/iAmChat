@@ -222,9 +222,20 @@ main {
     margin: 0;
 }
 
+#room-error {
+    display: none;
+    width: min(96vw, 1800px);
+    margin: 6px auto 0;
+    color: #fff;
+    background: color-mix(in srgb, var(--danger) 84%, black 16%);
+    border-radius: 10px;
+    padding: 10px 14px;
+    font-weight: 700;
+}
+
 #room-layout {
     display: grid;
-    grid-template-columns: 1fr 320px;
+    grid-template-columns: 1fr minmax(280px, 340px);
     gap: 16px;
     width: min(98vw, 1800px);
     margin: 0 auto;
@@ -232,20 +243,20 @@ main {
 }
 
 #video-streams {
-    display: flex;
-    flex-wrap: wrap;
-    justify-content: center;
-    gap: 20px;
+    --tile-min: 340px;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, var(--tile-min)), 1fr));
+    gap: 14px;
     width: 100%;
     margin: 0 auto;
     padding: 12px 8px 108px;
+    align-content: start;
 }
 
 .video-container {
-    flex-basis: 420px;
-    flex-grow: 1;
-    max-height: 100%;
-    min-height: 300px;
+    width: 100%;
+    aspect-ratio: 16 / 9;
+    min-height: 0;
     border: 1px solid var(--panel-stroke);
     border-radius: 24px;
     background: var(--panel-bg);
@@ -264,6 +275,29 @@ main {
     border-radius: 24px;
     height: 100%;
     width: 100%;
+}
+
+.video-player video {
+    width: 100% !important;
+    height: 100% !important;
+    object-fit: cover;
+}
+
+#video-streams.layout-1 {
+    --tile-min: min(980px, 100%);
+}
+
+#video-streams.layout-2 {
+    --tile-min: 430px;
+}
+
+#video-streams.layout-3,
+#video-streams.layout-4 {
+    --tile-min: 340px;
+}
+
+#video-streams.layout-many {
+    --tile-min: 280px;
 }
 
 .username-wrapper {
@@ -508,11 +542,10 @@ html[data-theme='study'] .theme-toggle-knob {
     #video-streams {
         width: 100%;
         gap: 14px;
+        --tile-min: 300px;
     }
 
     .video-container {
-        flex-basis: 340px;
-        min-height: 220px;
         margin: 0;
     }
 
@@ -538,6 +571,28 @@ html[data-theme='study'] .theme-toggle-knob {
 
     .theme-toggle-label {
         display: none;
+    }
+
+    #room-error {
+        width: calc(100% - 14px);
+        margin-left: 7px;
+        margin-right: 7px;
+    }
+
+    #video-streams {
+        --tile-min: 220px;
+        gap: 10px;
+        padding: 10px 6px 96px;
+    }
+
+    .video-container {
+        aspect-ratio: 4 / 3;
+        border-radius: 18px;
+    }
+
+    .video-player,
+    .video-player > * {
+        border-radius: 18px;
     }
 
     #controls-wrapper {
