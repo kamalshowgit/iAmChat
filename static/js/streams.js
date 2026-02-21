@@ -5,8 +5,11 @@ const CHANNEL = sessionStorage.getItem('room')
 let UID = sessionStorage.getItem('UID')
 
 let NAME = sessionStorage.getItem('name') || 'Guest'
+const isMobile = /android|iphone|ipad|ipod/i.test(navigator.userAgent)
+const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent)
+const preferredCodec = (isMobile || isSafari) ? 'h264' : 'vp8'
 
-const client = AgoraRTC.createClient({mode:'rtc', codec:'vp8'})
+const client = AgoraRTC.createClient({mode:'rtc', codec: preferredCodec})
 
 let localTracks = []
 let localAudioTrack = null
@@ -16,12 +19,50 @@ let chatPoller = null
 let lastMessageId = 0
 const CHAT_POLL_MS = 2000
 const videoStreams = document.getElementById('video-streams')
+const audioUnlockButton = document.getElementById('audio-unlock-btn')
+let pendingAudioTracks = []
 
 let setRoomError = (message) => {
     const errorNode = document.getElementById('room-error')
     if (!errorNode) return
     errorNode.textContent = message
     errorNode.style.display = message ? 'block' : 'none'
+}
+
+let showAudioUnlock = (shouldShow) => {
+    if (!audioUnlockButton) return
+    audioUnlockButton.style.display = shouldShow ? 'inline-flex' : 'none'
+}
+
+let queueAudioUnlock = (audioTrack) => {
+    if (!audioTrack) return
+    if (!pendingAudioTracks.includes(audioTrack)) {
+        pendingAudioTracks.push(audioTrack)
+    }
+    showAudioUnlock(true)
+    setRoomError('Tap "Enable Audio" to allow speaker playback on this device.')
+}
+
+let tryUnlockAudio = async () => {
+    if (!pendingAudioTracks.length) {
+        showAudioUnlock(false)
+        return
+    }
+
+    const retries = []
+    for (let i = 0; i < pendingAudioTracks.length; i++) {
+        try {
+            pendingAudioTracks[i].play()
+        } catch (error) {
+            retries.push(pendingAudioTracks[i])
+        }
+    }
+    pendingAudioTracks = retries
+
+    if (!pendingAudioTracks.length) {
+        showAudioUnlock(false)
+        setRoomError('')
+    }
 }
 
 let syncVideoLayout = () => {
@@ -42,17 +83,34 @@ let setControlEnabled = (id, enabled) => {
     control.style.pointerEvents = enabled ? 'auto' : 'none'
 }
 
+let applyVideoElementHints = (containerId, shouldMute = false) => {
+    const videoElement = document.querySelector(`#${containerId} video`)
+    if (!videoElement) return
+    videoElement.setAttribute('playsinline', 'true')
+    videoElement.setAttribute('webkit-playsinline', 'true')
+    videoElement.autoplay = true
+    videoElement.muted = shouldMute
+}
+
 let setupLocalTracks = async () => {
     const setupErrors = []
     try {
-        localAudioTrack = await AgoraRTC.createMicrophoneAudioTrack()
+        localAudioTrack = await AgoraRTC.createMicrophoneAudioTrack({
+            encoderConfig: 'music_standard',
+            AEC: true,
+            AGC: true,
+            ANS: true,
+        })
     } catch (error) {
         console.error('Microphone track failed', error)
         setupErrors.push('microphone')
     }
 
     try {
-        localVideoTrack = await AgoraRTC.createCameraVideoTrack()
+        localVideoTrack = await AgoraRTC.createCameraVideoTrack({
+            encoderConfig: isMobile ? '360p_8' : '480p_2',
+            optimizationMode: 'motion',
+        })
     } catch (error) {
         console.error('Camera track failed', error)
         setupErrors.push('camera')
@@ -82,6 +140,13 @@ let joinAndDisplayLocalStream = async () => {
 
     client.on('user-published', handleUserJoined)
     client.on('user-left', handleUserLeft)
+    client.on('connection-state-change', (currentState) => {
+        if (currentState === 'DISCONNECTED') {
+            setRoomError('Connection dropped. Reconnecting...')
+        } else if (currentState === 'CONNECTED') {
+            setRoomError('')
+        }
+    })
 
     try{
         UID = await client.join(APP_ID, CHANNEL, TOKEN, UID)
@@ -110,6 +175,7 @@ let joinAndDisplayLocalStream = async () => {
     syncVideoLayout()
     if (localVideoTrack) {
         localVideoTrack.play(`user-${UID}`)
+        applyVideoElementHints(`user-${UID}`, true)
     }
     await client.publish(localTracks)
     await fetchMessages(true)
@@ -142,6 +208,7 @@ let handleUserJoined = async (user, mediaType) => {
         syncVideoLayout()
         try {
             user.videoTrack.play(`user-${user.uid}`)
+            applyVideoElementHints(`user-${user.uid}`)
         } catch (error) {
             console.error('Remote video play failed', error)
         }
@@ -152,6 +219,7 @@ let handleUserJoined = async (user, mediaType) => {
             user.audioTrack.play()
         } catch (error) {
             console.error('Remote audio play failed', error)
+            queueAudioUnlock(user.audioTrack)
         }
     }
 }
@@ -355,8 +423,12 @@ window.addEventListener("beforeunload",deleteMember);
 joinAndDisplayLocalStream()
 syncVideoLayout()
 window.addEventListener('resize', syncVideoLayout)
+showAudioUnlock(false)
 
 document.getElementById('leave-btn').addEventListener('click', leaveAndRemoveLocalStream)
 document.getElementById('camera-btn').addEventListener('click', toggleCamera)
 document.getElementById('mic-btn').addEventListener('click', toggleMic)
 document.getElementById('chat-form').addEventListener('submit', sendMessage)
+if (audioUnlockButton) {
+    audioUnlockButton.addEventListener('click', tryUnlockAudio)
+}
