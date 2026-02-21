@@ -18,7 +18,7 @@
 body {
     margin: 0;
     font-family: 'Inter', sans-serif;
-    background: var(--bg);
+    background: radial-gradient(circle at 20% 10%, #1e293b, var(--bg) 50%);
     color: var(--text);
 }
 
@@ -155,13 +155,14 @@ main {
     width: min(98vw, 1600px);
     margin: 8px auto 0;
     display: grid;
-    grid-template-columns: minmax(0, 1fr) 300px;
+    grid-template-columns: minmax(0, 1fr) 320px;
     gap: 12px;
+    position: relative;
 }
 
 #video-streams {
     --tile-min: 280px;
-    min-height: calc(100vh - 180px);
+    min-height: calc(100vh - 220px);
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(min(100%, var(--tile-min)), 1fr));
     gap: 10px;
@@ -173,7 +174,7 @@ main {
 }
 
 #video-streams.layout-2 {
-    --tile-min: 420px;
+    --tile-min: 380px;
 }
 
 #video-streams.layout-4 {
@@ -191,6 +192,46 @@ main {
     overflow: hidden;
     position: relative;
     aspect-ratio: 16 / 9;
+}
+
+#video-streams.layout-couple {
+    display: block;
+    position: relative;
+}
+
+#video-streams.layout-couple .video-container {
+    width: 100%;
+    min-height: calc(100vh - 240px);
+    aspect-ratio: auto;
+}
+
+#video-streams.layout-couple .video-container.local-user {
+    position: absolute;
+    right: 14px;
+    bottom: 14px;
+    width: min(30vw, 260px);
+    min-height: auto;
+    aspect-ratio: 4 / 3;
+    z-index: 7;
+    box-shadow: 0 10px 32px rgba(2, 6, 23, 0.65);
+}
+
+#video-streams.layout-screen-share {
+    grid-template-columns: 1fr;
+}
+
+#video-streams.layout-screen-share .video-container.is-screen {
+    min-height: calc(100vh - 240px);
+    aspect-ratio: auto;
+}
+
+#video-streams.layout-screen-share .video-container:not(.is-screen) {
+    position: absolute;
+    right: 14px;
+    bottom: 14px;
+    width: min(26vw, 240px);
+    aspect-ratio: 16 / 10;
+    z-index: 7;
 }
 
 .video-player,
@@ -305,9 +346,9 @@ main {
     left: 50%;
     bottom: 14px;
     transform: translateX(-50%);
-    width: min(92vw, 430px);
+    width: min(96vw, 560px);
     display: grid;
-    grid-template-columns: repeat(3, 1fr);
+    grid-template-columns: repeat(4, 1fr);
     gap: 8px;
     padding: 8px;
     border-radius: 12px;
@@ -352,6 +393,58 @@ main {
     color: #fff;
 }
 
+#reactions-bar {
+    position: fixed;
+    right: 16px;
+    bottom: 76px;
+    display: flex;
+    gap: 8px;
+    padding: 8px;
+    border-radius: 12px;
+    border: 1px solid var(--line);
+    background: rgba(15, 23, 42, 0.8);
+    backdrop-filter: blur(8px);
+}
+
+.reaction-btn {
+    width: 36px;
+    height: 36px;
+    border: 1px solid var(--line);
+    background: var(--panel-soft);
+    border-radius: 50%;
+    cursor: pointer;
+    font-size: 18px;
+    line-height: 1;
+}
+
+#reaction-layer {
+    pointer-events: none;
+    position: fixed;
+    inset: 0;
+    overflow: hidden;
+}
+
+.reaction-burst {
+    position: absolute;
+    bottom: 80px;
+    font-size: 32px;
+    animation: floatUp 2.8s ease-out forwards;
+}
+
+@keyframes floatUp {
+    0% {
+        transform: translateY(0) scale(0.8);
+        opacity: 0;
+    }
+    15% {
+        opacity: 1;
+    }
+    100% {
+        transform: translateY(-55vh) scale(1.2);
+        opacity: 0;
+    }
+}
+
 @media (max-width: 960px) {
     #room-layout {
         grid-template-columns: 1fr;
@@ -363,7 +456,16 @@ main {
 
     #video-streams {
         min-height: 0;
-        padding-bottom: 120px;
+        padding-bottom: 150px;
+    }
+
+    #video-streams.layout-couple .video-container {
+        min-height: 54vh;
+    }
+
+    #video-streams.layout-couple .video-container.local-user,
+    #video-streams.layout-screen-share .video-container:not(.is-screen) {
+        width: min(34vw, 180px);
     }
 
     #chat-panel {
@@ -378,6 +480,13 @@ main {
         height: 300px;
         opacity: 1;
         border: 1px solid var(--line);
+    }
+
+    #reactions-bar {
+        left: 50%;
+        transform: translateX(-50%);
+        right: auto;
+        bottom: 66px;
     }
 }
 
@@ -394,5 +503,24 @@ main {
     #controls-wrapper {
         width: calc(100% - 10px);
         bottom: 8px;
+    }
+
+    #video-streams.layout-couple .video-container.local-user,
+    #video-streams.layout-screen-share .video-container:not(.is-screen) {
+        width: min(40vw, 150px);
+        right: 8px;
+        bottom: 8px;
+    }
+
+    #reactions-bar {
+        gap: 6px;
+        padding: 6px;
+        bottom: 60px;
+    }
+
+    .reaction-btn {
+        width: 32px;
+        height: 32px;
+        font-size: 16px;
     }
 }

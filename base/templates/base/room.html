@@ -16,6 +16,7 @@
 
     <section id="room-layout">
         <section id="video-streams" aria-live="polite"></section>
+        <div id="reaction-layer" aria-hidden="true"></div>
 
         <aside id="chat-panel">
             <div id="chat-header">
@@ -40,10 +41,23 @@
             <span>Camera</span>
         </button>
 
+        <button class="control-btn" id="screen-btn" type="button" aria-label="Share screen" aria-pressed="false">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-5v2h2a1 1 0 1 1 0 2H8a1 1 0 1 1 0-2h2v-2H5a2 2 0 0 1-2-2V5Zm2 0v9h14V5H5Z"/></svg>
+            <span>Share</span>
+        </button>
+
         <button class="control-btn danger" id="leave-btn" type="button" aria-label="Leave call">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 10.3c0 1.9-2.2 3.2-3.9 2.2l-1.5-.9a1 1 0 0 0-.52-.14H8.9a1 1 0 0 0-.52.14l-1.5.9C5.2 13.5 3 12.2 3 10.3 3 7.9 7.2 6 12 6s9 1.9 9 4.3ZM9 14h6a1 1 0 1 1 0 2H9a1 1 0 1 1 0-2Z"/></svg>
             <span>Leave</span>
         </button>
+    </section>
+
+    <section id="reactions-bar" aria-label="Quick reactions">
+        <button class="reaction-btn" data-emoji="❤️" type="button">❤️</button>
+        <button class="reaction-btn" data-emoji="😘" type="button">😘</button>
+        <button class="reaction-btn" data-emoji="🥰" type="button">🥰</button>
+        <button class="reaction-btn" data-emoji="👏" type="button">👏</button>
+        <button class="reaction-btn" data-emoji="🔥" type="button">🔥</button>
     </section>
 </main>
 

@@ -1,22 +1,25 @@
 const APP_ID = sessionStorage.getItem('appId');
-const TOKEN = sessionStorage.getItem('token');
+const TOKEN_RAW = sessionStorage.getItem('token');
 const CHANNEL = sessionStorage.getItem('room');
 let UID = sessionStorage.getItem('UID');
 const NAME = sessionStorage.getItem('name') || 'Guest';
 
-const isMobile = /android|iphone|ipad|ipod/i.test(navigator.userAgent);
 const client = AgoraRTC.createClient({ mode: 'rtc', codec: 'h264' });
+const isMobile = /android|iphone|ipad|ipod/i.test(navigator.userAgent);
+const REACTION_PREFIX = '__REACT__:';
+const CHAT_POLL_MS = 2000;
+const MAX_PLAY_RETRIES = 8;
 
-let localTracks = [];
 let localAudioTrack = null;
-let localVideoTrack = null;
+let localCameraTrack = null;
+let localScreenTrack = null;
+let isScreenSharing = false;
 let remoteUsers = {};
 let chatPoller = null;
 let lastMessageId = 0;
 let pendingAudioTracks = [];
 
-const CHAT_POLL_MS = 2000;
-const MAX_PLAY_RETRIES = 8;
+const token = TOKEN_RAW && TOKEN_RAW !== 'null' && TOKEN_RAW !== 'undefined' ? TOKEN_RAW : null;
 
 const videoStreams = document.getElementById('video-streams');
 const roomName = document.getElementById('room-name');
@@ -25,16 +28,30 @@ const roomError = document.getElementById('room-error');
 const audioUnlockButton = document.getElementById('audio-unlock-btn');
 const chatPanel = document.getElementById('chat-panel');
 const chatToggleButton = document.getElementById('chat-toggle-btn');
+const reactionLayer = document.getElementById('reaction-layer');
 
 const micButton = document.getElementById('mic-btn');
 const cameraButton = document.getElementById('camera-btn');
+const screenButton = document.getElementById('screen-btn');
 const leaveButton = document.getElementById('leave-btn');
 const chatForm = document.getElementById('chat-form');
+const reactionButtons = document.querySelectorAll('.reaction-btn');
 
 const setRoomError = (message) => {
     if (!roomError) return;
     roomError.textContent = message || '';
     roomError.style.display = message ? 'block' : 'none';
+};
+
+const setControlState = (button, isActive) => {
+    if (!button) return;
+    button.classList.toggle('is-muted', isActive);
+    button.setAttribute('aria-pressed', String(isActive));
+};
+
+const setControlEnabled = (button, enabled) => {
+    if (!button) return;
+    button.disabled = !enabled;
 };
 
 const showAudioUnlock = (show) => {
@@ -62,50 +79,8 @@ const tryUnlockAudio = async () => {
             retries.push(pendingAudioTracks[i]);
         }
     }
-
     pendingAudioTracks = retries;
-    if (!pendingAudioTracks.length) {
-        showAudioUnlock(false);
-    }
-};
-
-const syncVideoLayout = () => {
-    if (!videoStreams) return;
-    const count = videoStreams.querySelectorAll('.video-container').length;
-    videoStreams.classList.remove('layout-1', 'layout-2', 'layout-4', 'layout-many');
-
-    if (count <= 1) videoStreams.classList.add('layout-1');
-    else if (count === 2) videoStreams.classList.add('layout-2');
-    else if (count <= 4) videoStreams.classList.add('layout-4');
-    else videoStreams.classList.add('layout-many');
-};
-
-const updateParticipantCount = () => {
-    if (!participantCount) return;
-    const count = videoStreams ? videoStreams.querySelectorAll('.video-container').length : 0;
-    participantCount.textContent = `Participants: ${count}`;
-};
-
-const setControlEnabled = (button, enabled) => {
-    if (!button) return;
-    button.disabled = !enabled;
-};
-
-const setControlState = (button, isMuted) => {
-    if (!button) return;
-    button.classList.toggle('is-muted', isMuted);
-    button.setAttribute('aria-pressed', String(isMuted));
-};
-
-const applyVideoElementHints = (playerId, muted = false) => {
-    const player = document.getElementById(playerId);
-    if (!player) return;
-    const video = player.querySelector('video');
-    if (!video) return;
-    video.setAttribute('playsinline', 'true');
-    video.setAttribute('webkit-playsinline', 'true');
-    video.autoplay = true;
-    video.muted = muted;
+    if (!pendingAudioTracks.length) showAudioUnlock(false);
 };
 
 const escapeHtml = (value) => {
@@ -117,43 +92,89 @@ const escapeHtml = (value) => {
         .replace(/'/g, '&#39;');
 };
 
-const ensureVideoContainer = (userUid, displayName) => {
-    if (!videoStreams) return;
-    const existing = document.getElementById(`user-container-${userUid}`);
-    if (existing) existing.remove();
+const getVideoTrackLabel = (track) => {
+    try {
+        const mediaTrack = track.getMediaStreamTrack ? track.getMediaStreamTrack() : null;
+        return (mediaTrack && mediaTrack.label ? mediaTrack.label : '').toLowerCase();
+    } catch (error) {
+        return '';
+    }
+};
 
-    const card = `
-        <article class="video-container" id="user-container-${userUid}">
+const looksLikeScreenTrack = (track) => {
+    const label = getVideoTrackLabel(track);
+    return label.includes('screen') || label.includes('display') || label.includes('window');
+};
+
+const applyVideoHints = (playerId, muted = false) => {
+    const player = document.getElementById(playerId);
+    if (!player) return;
+    const video = player.querySelector('video');
+    if (!video) return;
+    video.setAttribute('playsinline', 'true');
+    video.setAttribute('webkit-playsinline', 'true');
+    video.autoplay = true;
+    video.muted = muted;
+};
+
+const syncVideoLayout = () => {
+    if (!videoStreams) return;
+    const cards = videoStreams.querySelectorAll('.video-container');
+    const count = cards.length;
+    const hasScreen = !!videoStreams.querySelector('.video-container.is-screen');
+
+    videoStreams.classList.remove('layout-1', 'layout-2', 'layout-couple', 'layout-many', 'layout-screen-share');
+    if (hasScreen) {
+        videoStreams.classList.add('layout-screen-share');
+    } else if (count <= 1) {
+        videoStreams.classList.add('layout-1');
+    } else if (count === 2) {
+        videoStreams.classList.add('layout-couple');
+    } else if (count <= 4) {
+        videoStreams.classList.add('layout-2');
+    } else {
+        videoStreams.classList.add('layout-many');
+    }
+
+    if (participantCount) participantCount.textContent = `Participants: ${count}`;
+};
+
+const ensureVideoContainer = (userUid, displayName, isLocal = false, isScreen = false) => {
+    if (!videoStreams) return;
+    const id = `user-container-${userUid}`;
+    const old = document.getElementById(id);
+    if (old) old.remove();
+
+    const html = `
+        <article class="video-container ${isLocal ? 'local-user' : ''} ${isScreen ? 'is-screen' : ''}" id="${id}">
             <div class="video-player" id="user-${userUid}"></div>
-            <div class="username-wrapper">${escapeHtml(displayName || 'Guest')}</div>
+            <div class="username-wrapper">${escapeHtml(displayName || 'Guest')}${isScreen ? ' · Screen' : ''}</div>
         </article>
     `;
-    videoStreams.insertAdjacentHTML('beforeend', card);
+    videoStreams.insertAdjacentHTML('beforeend', html);
     syncVideoLayout();
-    updateParticipantCount();
 };
 
 const removeVideoContainer = (userUid) => {
-    const node = document.getElementById(`user-container-${userUid}`);
-    if (node) node.remove();
+    const card = document.getElementById(`user-container-${userUid}`);
+    if (card) card.remove();
     syncVideoLayout();
-    updateParticipantCount();
 };
 
-const playRemoteVideoWithRetry = async (user, playerId, attempt = 0) => {
-    if (!user || !user.videoTrack) return;
+const playVideoWithRetry = async (track, playerId, muted = false, attempt = 0) => {
+    if (!track) return;
     try {
-        await Promise.resolve(user.videoTrack.play(playerId));
+        await Promise.resolve(track.play(playerId));
         await new Promise((resolve) => setTimeout(resolve, 120));
-        applyVideoElementHints(playerId, false);
+        applyVideoHints(playerId, muted);
     } catch (error) {
         if (attempt >= MAX_PLAY_RETRIES) {
-            console.error('Remote video play failed:', error);
+            console.error('Video play failed:', error);
             return;
         }
         setTimeout(() => {
-            playRemoteVideoWithRetry(user, playerId, attempt + 1);
-        }, 200 * (attempt + 1));
+            playVideoWithRetry(track, playerId, muted, attempt + 1);
+        }, 220 * (attempt + 1));
     }
 };
 
@@ -194,8 +215,7 @@ const deleteMember = async () => {
 };
 
 const setupLocalTracks = async () => {
-    const setupErrors = [];
-
+    const errors = [];
     try {
         localAudioTrack = await AgoraRTC.createMicrophoneAudioTrack({
             encoderConfig: 'music_standard',
@@ -204,44 +224,46 @@ const setupLocalTracks = async () => {
             ANS: true,
         });
     } catch (error) {
-        setupErrors.push('microphone');
-        console.error('Microphone unavailable:', error);
+        errors.push('microphone');
     }
 
     try {
-        localVideoTrack = await AgoraRTC.createCameraVideoTrack({
-            encoderConfig: isMobile ? '360p_8' : '480p_2',
+        localCameraTrack = await AgoraRTC.createCameraVideoTrack({
+            encoderConfig: isMobile ? '360p_8' : '720p_1',
             optimizationMode: 'motion',
         });
     } catch (error) {
-        setupErrors.push('camera');
-        console.error('Camera unavailable:', error);
+        errors.push('camera');
     }
 
-    localTracks = [localAudioTrack, localVideoTrack].filter(Boolean);
     setControlEnabled(micButton, Boolean(localAudioTrack));
-    setControlEnabled(cameraButton, Boolean(localVideoTrack));
-    setControlState(micButton, false);
-    setControlState(cameraButton, false);
+    setControlEnabled(cameraButton, Boolean(localCameraTrack));
+    setControlEnabled(screenButton, Boolean(localCameraTrack));
 
-    if (setupErrors.length) {
-        setRoomError(`Missing ${setupErrors.join(' and ')} permission. Join again after allowing access.`);
+    if (errors.length) setRoomError(`Missing ${errors.join(' and ')} permission.`);
+};
+
+const subscribeWithRetry = async (user, mediaType, attempt = 0) => {
+    try {
+        await client.subscribe(user, mediaType);
+        return true;
+    } catch (error) {
+        if (attempt >= 3) return false;
+        await new Promise((resolve) => setTimeout(resolve, 300 * (attempt + 1)));
+        return subscribeWithRetry(user, mediaType, attempt + 1);
     }
 };
 
 const handleUserPublished = async (user, mediaType) => {
     remoteUsers[user.uid] = user;
-    try {
-        await client.subscribe(user, mediaType);
-    } catch (error) {
-        console.error('Subscribe failed:', error);
-        return;
-    }
+    const subscribed = await subscribeWithRetry(user, mediaType);
+    if (!subscribed) return;
 
     if (mediaType === 'video') {
         const member = await getMember(user);
-        ensureVideoContainer(user.uid, member.name);
-        await playRemoteVideoWithRetry(user, `user-${user.uid}`);
+        const isScreen = looksLikeScreenTrack(user.videoTrack);
+        ensureVideoContainer(user.uid, member.name, false, isScreen);
+        await playVideoWithRetry(user.videoTrack, `user-${user.uid}`, false);
     }
 
     if (mediaType === 'audio') {
@@ -262,47 +284,49 @@ const handleUserLeft = (user) => {
     removeVideoContainer(user.uid);
 };
 
+const publishCurrentTracks = async () => {
+    const tracks = [localAudioTrack, isScreenSharing ? localScreenTrack : localCameraTrack].filter(Boolean);
+    if (!tracks.length) return;
+    await client.publish(tracks);
+};
+
 const joinAndDisplayLocalStream = async () => {
-    if (!APP_ID || !TOKEN || !CHANNEL || !UID) {
+    if (!APP_ID || !CHANNEL || !UID) {
         setRoomError('Session expired. Join again.');
         window.open('/', '_self');
         return;
     }
-
     if (roomName) roomName.textContent = CHANNEL;
 
     client.on('user-published', handleUserPublished);
     client.on('user-unpublished', handleUserUnpublished);
     client.on('user-left', handleUserLeft);
+    client.on('token-privilege-will-expire', () => setRoomError('Session expiring. Rejoin room soon.'));
     client.on('connection-state-change', (state) => {
         if (state === 'DISCONNECTED') setRoomError('Connection lost. Reconnecting...');
         if (state === 'CONNECTED') setRoomError('');
     });
 
     try {
-        UID = await client.join(APP_ID, CHANNEL, TOKEN, UID);
+        UID = await client.join(APP_ID, CHANNEL, token, UID);
     } catch (error) {
         console.error('Join failed:', error);
-        setRoomError('Unable to connect to call.');
+        setRoomError('Unable to connect to room.');
         return;
     }
 
     await setupLocalTracks();
-    if (!localTracks.length) {
+    if (!localAudioTrack && !localCameraTrack) {
         await client.leave();
         return;
     }
 
     const member = await createMember();
-    ensureVideoContainer(UID, member.name || NAME);
-
-    if (localVideoTrack) {
-        await Promise.resolve(localVideoTrack.play(`user-${UID}`));
-        applyVideoElementHints(`user-${UID}`, true);
-    }
+    ensureVideoContainer(UID, member.name || NAME, true, false);
+    if (localCameraTrack) await playVideoWithRetry(localCameraTrack, `user-${UID}`, true);
 
     try {
-        await client.publish(localTracks);
+        await publishCurrentTracks();
     } catch (error) {
         console.error('Publish failed:', error);
         setRoomError('Unable to publish stream.');
@@ -313,39 +337,106 @@ const joinAndDisplayLocalStream = async () => {
     startChatPolling();
 };
 
-const leaveAndRemoveLocalStream = async () => {
-    if (chatPoller) {
-        clearInterval(chatPoller);
-        chatPoller = null;
-    }
-
-    for (let i = 0; i < localTracks.length; i++) {
-        localTracks[i].stop();
-        localTracks[i].close();
-    }
-
-    try {
-        await client.leave();
-    } catch (error) {
-        console.error('Leave failed:', error);
-    }
-
-    await deleteMember();
-    window.open('/', '_self');
-};
-
 const toggleMic = async () => {
-    if (!localAudioTrack || !micButton) return;
-    const nextMuted = !localAudioTrack.muted;
-    await localAudioTrack.setMuted(nextMuted);
-    setControlState(micButton, nextMuted);
+    if (!localAudioTrack) return;
+    const muted = !localAudioTrack.muted;
+    await localAudioTrack.setMuted(muted);
+    setControlState(micButton, muted);
 };
 
 const toggleCamera = async () => {
-    if (!localVideoTrack || !cameraButton) return;
-    const nextMuted = !localVideoTrack.muted;
-    await localVideoTrack.setMuted(nextMuted);
-    setControlState(cameraButton, nextMuted);
+    if (!localCameraTrack || isScreenSharing) return;
+    const muted = !localCameraTrack.muted;
+    await localCameraTrack.setMuted(muted);
+    setControlState(cameraButton, muted);
+};
+
+const stopScreenShare = async (fromEndedEvent = false) => {
+    if (!isScreenSharing || !localScreenTrack) return;
+    try {
+        await client.unpublish(localScreenTrack);
+    } catch (error) {}
+    localScreenTrack.stop();
+    localScreenTrack.close();
+    localScreenTrack = null;
+    isScreenSharing = false;
+    setControlState(screenButton, false);
+    setControlEnabled(cameraButton, Boolean(localCameraTrack));
+
+    ensureVideoContainer(UID, NAME, true, false);
+    if (localCameraTrack) {
+        await playVideoWithRetry(localCameraTrack, `user-${UID}`, true);
+        await client.publish(localCameraTrack);
+    }
+    if (!fromEndedEvent) setRoomError('');
+};
+
+const startScreenShare = async () => {
+    if (isScreenSharing || !localCameraTrack) return;
+    try {
+        localScreenTrack = await AgoraRTC.createScreenVideoTrack(
+            { encoderConfig: '1080p_1', optimizationMode: 'detail' },
+            'disable'
+        );
+    } catch (error) {
+        setRoomError('Screen share blocked. Allow browser permission and retry.');
+        return;
+    }
+
+    try {
+        await client.unpublish(localCameraTrack);
+        await client.publish(localScreenTrack);
+    } catch (error) {
+        setRoomError('Unable to start screen share.');
+        localScreenTrack.close();
+        localScreenTrack = null;
+        return;
+    }
+
+    isScreenSharing = true;
+    setControlState(screenButton, true);
+    setControlEnabled(cameraButton, false);
+    ensureVideoContainer(UID, NAME, true, true);
+    await playVideoWithRetry(localScreenTrack, `user-${UID}`, true);
+
+    localScreenTrack.on('track-ended', async () => {
+        await stopScreenShare(true);
+    });
+};
+
+const toggleScreenShare = async () => {
+    if (isScreenSharing) {
+        await stopScreenShare();
+    } else {
+        await startScreenShare();
+    }
+};
+
+const showReactionBurst = (emoji) => {
+    if (!reactionLayer) return;
+    const node = document.createElement('span');
+    node.className = 'reaction-burst';
+    node.textContent = emoji;
+    node.style.left = `${10 + Math.random() * 80}%`;
+    node.style.animationDuration = `${2 + Math.random() * 1.6}s`;
+    reactionLayer.appendChild(node);
+    setTimeout(() => node.remove(), 3800);
+};
+
+const sendReaction = async (emoji) => {
+    showReactionBurst(emoji);
+    try {
+        await fetch('/create_message/', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                name: NAME,
+                UID,
+                room_name: CHANNEL,
+                message: `${REACTION_PREFIX}${emoji}`,
+            }),
+        });
+    } catch (error) {}
 };
 
 const toggleChatPanel = () => {
@@ -358,7 +449,13 @@ const formatChatTime = (unixTime) => {
     return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 };
 
-const renderMessage = (message) => {
+const renderMessage = (message, isInitialFetch = false) => {
+    const text = String(message.message || '');
+    if (text.startsWith(REACTION_PREFIX)) {
+        if (!isInitialFetch) showReactionBurst(text.replace(REACTION_PREFIX, '').trim() || '❤️');
+        return;
+    }
+
     const container = document.getElementById('chat-messages');
     if (!container) return;
     if (document.getElementById(`chat-msg-${message.id}`)) return;
@@ -372,7 +469,7 @@ const renderMessage = (message) => {
             <span class="chat-name">${escapeHtml(message.name)}</span>
             <span class="chat-time">${formatChatTime(message.created_at)}</span>
         </div>
-        <p class="chat-text">${escapeHtml(message.message)}</p>
+        <p class="chat-text">${escapeHtml(text)}</p>
     `;
     container.appendChild(node);
     container.scrollTop = container.scrollHeight;
@@ -380,51 +477,61 @@ const renderMessage = (message) => {
 
 const fetchMessages = async (isInitial = false) => {
     try {
-        const limit = isInitial ? 100 : 50;
-        const response = await fetch(`/get_messages/?room_name=${CHANNEL}&after_id=${lastMessageId}&limit=${limit}`);
+        const response = await fetch(`/get_messages/?room_name=${CHANNEL}&after_id=${lastMessageId}&limit=${isInitial ? 100 : 50}`);
         if (!response.ok) return;
-
-        const data = await response.json();
-        const messages = data.messages || [];
+        const payload = await response.json();
+        const messages = payload.messages || [];
         for (let i = 0; i < messages.length; i++) {
-            renderMessage(messages[i]);
-            lastMessageId = Math.max(lastMessageId, messages[i].id);
+            renderMessage(messages[i], isInitial);
+            lastMessageId = Math.max(lastMessageId, messages[i].id || 0);
         }
-    } catch (error) {
-        console.error('fetchMessages failed:', error);
-    }
+    } catch (error) {}
 };
 
-const sendMessage = async (e) => {
-    e.preventDefault();
+const sendMessage = async (event) => {
+    event.preventDefault();
     const input = document.getElementById('chat-input');
     if (!input) return;
-
-    const message = input.value.trim();
-    if (!message) return;
+    const text = input.value.trim();
+    if (!text) return;
     input.value = '';
 
     try {
         const response = await fetch('/create_message/', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ name: NAME, UID, room_name: CHANNEL, message }),
+            body: JSON.stringify({ name: NAME, UID, room_name: CHANNEL, message: text }),
         });
         if (!response.ok) return;
-
         const saved = await response.json();
-        renderMessage(saved);
+        renderMessage(saved, false);
         lastMessageId = Math.max(lastMessageId, saved.id || 0);
-    } catch (error) {
-        console.error('sendMessage failed:', error);
-    }
+    } catch (error) {}
 };
 
 const startChatPolling = () => {
     if (chatPoller) return;
-    chatPoller = setInterval(() => {
-        fetchMessages(false);
-    }, CHAT_POLL_MS);
+    chatPoller = setInterval(() => fetchMessages(false), CHAT_POLL_MS);
+};
+
+const leaveAndRemoveLocalStream = async () => {
+    if (chatPoller) clearInterval(chatPoller);
+    chatPoller = null;
+
+    if (isScreenSharing) await stopScreenShare();
+
+    const localTracks = [localAudioTrack, localCameraTrack].filter(Boolean);
+    for (let i = 0; i < localTracks.length; i++) {
+        localTracks[i].stop();
+        localTracks[i].close();
+    }
+
+    try {
+        await client.leave();
+    } catch (error) {}
+
+    await deleteMember();
+    window.open('/', '_self');
 };
 
 window.addEventListener('beforeunload', deleteMember);
@@ -433,9 +540,11 @@ window.addEventListener('resize', syncVideoLayout);
 if (audioUnlockButton) audioUnlockButton.addEventListener('click', tryUnlockAudio);
 if (micButton) micButton.addEventListener('click', toggleMic);
 if (cameraButton) cameraButton.addEventListener('click', toggleCamera);
+if (screenButton) screenButton.addEventListener('click', toggleScreenShare);
 if (leaveButton) leaveButton.addEventListener('click', leaveAndRemoveLocalStream);
 if (chatForm) chatForm.addEventListener('submit', sendMessage);
 if (chatToggleButton) chatToggleButton.addEventListener('click', toggleChatPanel);
+reactionButtons.forEach((btn) => btn.addEventListener('click', () => sendReaction(btn.dataset.emoji || '❤️')));
 
 showAudioUnlock(false);
 joinAndDisplayLocalStream();
