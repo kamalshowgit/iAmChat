@@ -18,6 +18,7 @@ let localScreenTrack = null;
 let isScreenSharing = false;
 let remoteUsers = {};
 let chatPoller = null;
+let remoteReconcilePoller = null;
 let lastMessageId = 0;
 let pendingAudioTracks = [];
 
@@ -193,6 +194,7 @@ const removeVideoContainer = (userUid) => {
 const playVideoWithRetry = async (track, playerId, attempt = 0) => {
     if (!track) return;
     try {
+        try { track.stop(); } catch (stopError) {}
         await Promise.resolve(track.play(playerId));
         await new Promise((resolve) => setTimeout(resolve, 120));
         applyVideoHints(playerId);
@@ -311,6 +313,28 @@ const handleUserPublished = async (user, mediaType) => {
             await Promise.resolve(user.audioTrack.play());
         } catch (error) {
             queueAudioUnlock(user.audioTrack);
+        }
+    }
+};
+
+const reconcileRemoteVideos = async () => {
+    // Some desktop browsers occasionally miss publish/play transitions.
+    // Reconcile from client.remoteUsers so everyone stays visible.
+    const currentRemoteUsers = client.remoteUsers || [];
+    for (let i = 0; i < currentRemoteUsers.length; i++) {
+        const remote = currentRemoteUsers[i];
+        remoteUsers[remote.uid] = remote;
+        if (remote.videoTrack) {
+            const isScreen = looksLikeScreenTrack(remote.videoTrack);
+            ensureVideoContainer(remote.uid, `Participant ${remote.uid}`, false, isScreen);
+            await playVideoWithRetry(remote.videoTrack, `user-${remote.uid}`);
+        }
+        if (remote.audioTrack) {
+            try {
+                await Promise.resolve(remote.audioTrack.play());
+            } catch (error) {
+                queueAudioUnlock(remote.audioTrack);
+            }
         }
     }
 };
@@ -668,9 +692,18 @@ const startChatPolling = () => {
     chatPoller = setInterval(() => fetchMessages(false), CHAT_POLL_MS);
 };
 
+const startRemoteReconcilePolling = () => {
+    if (remoteReconcilePoller) return;
+    remoteReconcilePoller = setInterval(() => {
+        reconcileRemoteVideos();
+    }, 2000);
+};
+
 const leaveAndRemoveLocalStream = async () => {
     if (chatPoller) clearInterval(chatPoller);
     chatPoller = null;
+    if (remoteReconcilePoller) clearInterval(remoteReconcilePoller);
+    remoteReconcilePoller = null;
 
     if (isScreenSharing) await stopScreenShare();
 
@@ -710,3 +743,4 @@ if (signatureSendButton) signatureSendButton.addEventListener('click', sendSigna
 showAudioUnlock(false);
 setupSignaturePad();
 joinAndDisplayLocalStream();
+startRemoteReconcilePolling();
