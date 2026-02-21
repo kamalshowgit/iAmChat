@@ -59,6 +59,34 @@
         <button class="reaction-btn" data-emoji="👏" type="button">👏</button>
         <button class="reaction-btn" data-emoji="🔥" type="button">🔥</button>
     </section>
+
+    <section id="activity-panel" aria-label="Activity tools">
+        <h4>Activities</h4>
+        <div class="activity-group">
+            <label for="share-url">Share File/Link</label>
+            <div class="activity-row">
+                <input id="share-title" type="text" maxlength="80" placeholder="Title (optional)">
+                <input id="share-url" type="url" maxlength="260" placeholder="https://...">
+                <button id="share-link-btn" type="button">Share</button>
+            </div>
+        </div>
+        <div class="activity-group">
+            <label>Signature Pad</label>
+            <canvas id="signature-pad" width="280" height="120"></canvas>
+            <div class="activity-row">
+                <button id="sig-clear-btn" type="button">Clear</button>
+                <button id="sig-save-btn" type="button">Download</button>
+                <button id="sig-send-btn" type="button">Send Note</button>
+            </div>
+        </div>
+        <div class="activity-group">
+            <label>Quick Fun</label>
+            <div class="activity-row">
+                <button id="coin-flip-btn" type="button">Coin Flip</button>
+                <button id="dice-roll-btn" type="button">Roll Dice</button>
+            </div>
+        </div>
+    </section>
 </main>
 
 <script type="text/javascript" src="{% static 'assets/AgoraRTC_N-4.8.0.js' %}"></script>

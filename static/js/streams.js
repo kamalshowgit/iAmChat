@@ -7,6 +7,8 @@ const NAME = sessionStorage.getItem('name') || 'Guest';
 const client = AgoraRTC.createClient({ mode: 'rtc', codec: 'h264' });
 const isMobile = /android|iphone|ipad|ipod/i.test(navigator.userAgent);
 const REACTION_PREFIX = '__REACT__:';
+const LINK_PREFIX = '__LINK__:';
+const ACTIVITY_PREFIX = '__ACT__:';
 const CHAT_POLL_MS = 2000;
 const MAX_PLAY_RETRIES = 8;
 
@@ -36,6 +38,18 @@ const screenButton = document.getElementById('screen-btn');
 const leaveButton = document.getElementById('leave-btn');
 const chatForm = document.getElementById('chat-form');
 const reactionButtons = document.querySelectorAll('.reaction-btn');
+const shareTitleInput = document.getElementById('share-title');
+const shareUrlInput = document.getElementById('share-url');
+const shareLinkButton = document.getElementById('share-link-btn');
+const coinFlipButton = document.getElementById('coin-flip-btn');
+const diceRollButton = document.getElementById('dice-roll-btn');
+const signatureCanvas = document.getElementById('signature-pad');
+const signatureClearButton = document.getElementById('sig-clear-btn');
+const signatureSaveButton = document.getElementById('sig-save-btn');
+const signatureSendButton = document.getElementById('sig-send-btn');
+
+let signatureCtx = null;
+let signatureDrawing = false;
 
 const setRoomError = (message) => {
     if (!roomError) return;
@@ -118,6 +132,8 @@ const applyVideoHints = (playerId) => {
     video.muted = true;
 };
 
+const getPlayerNode = (userUid) => document.getElementById(`user-${userUid}`);
+
 const syncVideoLayout = () => {
     if (!videoStreams) return;
     const cards = videoStreams.querySelectorAll('.video-container');
@@ -147,16 +163,23 @@ const syncVideoLayout = () => {
 const ensureVideoContainer = (userUid, displayName, isLocal = false, isScreen = false) => {
     if (!videoStreams) return;
     const id = `user-container-${userUid}`;
-    const old = document.getElementById(id);
-    if (old) old.remove();
-
-    const html = `
-        <article class="video-container ${isLocal ? 'local-user' : ''} ${isScreen ? 'is-screen' : ''}" id="${id}">
-            <div class="video-player" id="user-${userUid}"></div>
-            <div class="username-wrapper">${escapeHtml(displayName || 'Guest')}${isScreen ? ' · Screen' : ''}</div>
-        </article>
-    `;
-    videoStreams.insertAdjacentHTML('beforeend', html);
+    const existing = document.getElementById(id);
+    if (existing) {
+        existing.classList.toggle('local-user', isLocal);
+        existing.classList.toggle('is-screen', isScreen);
+        const nameNode = existing.querySelector('.username-wrapper');
+        if (nameNode) {
+            nameNode.textContent = `${displayName || 'Guest'}${isScreen ? ' · Screen' : ''}`;
+        }
+    } else {
+        const html = `
+            <article class="video-container ${isLocal ? 'local-user' : ''} ${isScreen ? 'is-screen' : ''}" id="${id}">
+                <div class="video-player" id="user-${userUid}"></div>
+                <div class="username-wrapper">${escapeHtml(displayName || 'Guest')}${isScreen ? ' · Screen' : ''}</div>
+            </article>
+        `;
+        videoStreams.insertAdjacentHTML('beforeend', html);
+    }
     syncVideoLayout();
 };
 
@@ -169,7 +192,9 @@ const removeVideoContainer = (userUid) => {
 const playVideoWithRetry = async (track, playerId, attempt = 0) => {
     if (!track) return;
     try {
-        await Promise.resolve(track.play(playerId));
+        const playerNode = document.getElementById(playerId);
+        if (!playerNode) throw new Error(`Missing player node ${playerId}`);
+        await Promise.resolve(track.play(playerNode));
         await new Promise((resolve) => setTimeout(resolve, 120));
         applyVideoHints(playerId);
     } catch (error) {
@@ -267,11 +292,10 @@ const handleUserPublished = async (user, mediaType) => {
 
     if (mediaType === 'video') {
         const isScreen = looksLikeScreenTrack(user.videoTrack);
-        // Render container first to avoid waiting on backend name lookup.
         ensureVideoContainer(user.uid, `Participant ${user.uid}`, false, isScreen);
+        await playVideoWithRetry(user.videoTrack, `user-${user.uid}`);
         const member = await getMember(user);
         ensureVideoContainer(user.uid, member.name, false, isScreen);
-        await playVideoWithRetry(user.videoTrack, `user-${user.uid}`);
     }
 
     if (mediaType === 'audio') {
@@ -448,6 +472,100 @@ const sendReaction = async (emoji) => {
     } catch (error) {}
 };
 
+const sendActivityMessage = async (message) => {
+    try {
+        await fetch('/create_message/', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name: NAME, UID, room_name: CHANNEL, message }),
+        });
+    } catch (error) {}
+};
+
+const normalizeUrl = (value) => {
+    const trimmed = (value || '').trim();
+    if (!trimmed) return '';
+    return /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+};
+
+const shareLink = async () => {
+    const url = normalizeUrl(shareUrlInput ? shareUrlInput.value : '');
+    if (!url) return;
+    const title = (shareTitleInput && shareTitleInput.value.trim()) || 'Shared Link';
+    await sendActivityMessage(`${LINK_PREFIX}${title}|${url}`);
+    if (shareTitleInput) shareTitleInput.value = '';
+    if (shareUrlInput) shareUrlInput.value = '';
+};
+
+const flipCoin = async () => {
+    const result = Math.random() > 0.5 ? 'Heads' : 'Tails';
+    await sendActivityMessage(`${ACTIVITY_PREFIX}Coin Flip: ${result}`);
+};
+
+const rollDice = async () => {
+    const result = 1 + Math.floor(Math.random() * 6);
+    await sendActivityMessage(`${ACTIVITY_PREFIX}Dice Roll: ${result}`);
+};
+
+const setupSignaturePad = () => {
+    if (!signatureCanvas) return;
+    signatureCtx = signatureCanvas.getContext('2d');
+    if (!signatureCtx) return;
+    signatureCtx.lineWidth = 2;
+    signatureCtx.lineCap = 'round';
+    signatureCtx.strokeStyle = '#e5e7eb';
+
+    const getPos = (event) => {
+        const rect = signatureCanvas.getBoundingClientRect();
+        const source = event.touches ? event.touches[0] : event;
+        return { x: source.clientX - rect.left, y: source.clientY - rect.top };
+    };
+
+    const start = (event) => {
+        signatureDrawing = true;
+        const p = getPos(event);
+        signatureCtx.beginPath();
+        signatureCtx.moveTo(p.x, p.y);
+    };
+
+    const move = (event) => {
+        if (!signatureDrawing) return;
+        event.preventDefault();
+        const p = getPos(event);
+        signatureCtx.lineTo(p.x, p.y);
+        signatureCtx.stroke();
+    };
+
+    const stop = () => {
+        signatureDrawing = false;
+    };
+
+    signatureCanvas.addEventListener('mousedown', start);
+    signatureCanvas.addEventListener('mousemove', move);
+    signatureCanvas.addEventListener('mouseup', stop);
+    signatureCanvas.addEventListener('mouseleave', stop);
+    signatureCanvas.addEventListener('touchstart', start, { passive: false });
+    signatureCanvas.addEventListener('touchmove', move, { passive: false });
+    signatureCanvas.addEventListener('touchend', stop);
+};
+
+const clearSignature = () => {
+    if (!signatureCanvas || !signatureCtx) return;
+    signatureCtx.clearRect(0, 0, signatureCanvas.width, signatureCanvas.height);
+};
+
+const saveSignature = () => {
+    if (!signatureCanvas) return;
+    const link = document.createElement('a');
+    link.href = signatureCanvas.toDataURL('image/png');
+    link.download = `signature-${Date.now()}.png`;
+    link.click();
+};
+
+const sendSignatureNote = async () => {
+    await sendActivityMessage(`${ACTIVITY_PREFIX}Shared a signature ✍️`);
+};
+
 const toggleChatPanel = () => {
     if (!chatPanel) return;
     chatPanel.classList.toggle('is-open');
@@ -473,12 +591,24 @@ const renderMessage = (message, isInitialFetch = false) => {
     const node = document.createElement('article');
     node.className = `chat-message ${isMine ? 'is-mine' : ''}`.trim();
     node.id = `chat-msg-${message.id}`;
+    let bodyHtml = `<p class="chat-text">${escapeHtml(text)}</p>`;
+    if (text.startsWith(LINK_PREFIX)) {
+        const payload = text.replace(LINK_PREFIX, '');
+        const splitIndex = payload.indexOf('|');
+        const title = splitIndex > -1 ? payload.slice(0, splitIndex) : 'Shared Link';
+        const url = splitIndex > -1 ? payload.slice(splitIndex + 1) : payload;
+        bodyHtml = `<p class="chat-text"><a class="shared-link" href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(title)}</a></p>`;
+    } else if (text.startsWith(ACTIVITY_PREFIX)) {
+        const details = text.replace(ACTIVITY_PREFIX, '').trim();
+        bodyHtml = `<p class="chat-text activity-note">${escapeHtml(details)}</p>`;
+    }
+
     node.innerHTML = `
         <div class="chat-meta">
             <span class="chat-name">${escapeHtml(message.name)}</span>
             <span class="chat-time">${formatChatTime(message.created_at)}</span>
         </div>
-        <p class="chat-text">${escapeHtml(text)}</p>
+        ${bodyHtml}
     `;
     container.appendChild(node);
     container.scrollTop = container.scrollHeight;
@@ -554,6 +684,13 @@ if (leaveButton) leaveButton.addEventListener('click', leaveAndRemoveLocalStream
 if (chatForm) chatForm.addEventListener('submit', sendMessage);
 if (chatToggleButton) chatToggleButton.addEventListener('click', toggleChatPanel);
 reactionButtons.forEach((btn) => btn.addEventListener('click', () => sendReaction(btn.dataset.emoji || '❤️')));
+if (shareLinkButton) shareLinkButton.addEventListener('click', shareLink);
+if (coinFlipButton) coinFlipButton.addEventListener('click', flipCoin);
+if (diceRollButton) diceRollButton.addEventListener('click', rollDice);
+if (signatureClearButton) signatureClearButton.addEventListener('click', clearSignature);
+if (signatureSaveButton) signatureSaveButton.addEventListener('click', saveSignature);
+if (signatureSendButton) signatureSendButton.addEventListener('click', sendSignatureNote);
 
 showAudioUnlock(false);
+setupSignaturePad();
 joinAndDisplayLocalStream();
