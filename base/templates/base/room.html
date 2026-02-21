@@ -7,7 +7,22 @@
         <p>Room Tag: <span id="room-name"></span></p>
     </section>
 
-    <section id="video-streams"></section>
+    <section id="room-layout">
+        <section id="video-streams"></section>
+
+        <aside id="chat-panel">
+            <div id="chat-header">
+                <h3>Room Chat</h3>
+            </div>
+
+            <div id="chat-messages"></div>
+
+            <form id="chat-form">
+                <input id="chat-input" type="text" maxlength="500" placeholder="Type a message..." autocomplete="off" />
+                <button id="chat-send-btn" type="submit">Send</button>
+            </form>
+        </aside>
+    </section>
 
     <section id="controls-wrapper">
         <div class="icon-wrapper">

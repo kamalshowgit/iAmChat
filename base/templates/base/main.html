@@ -7,12 +7,29 @@
     <title>Hello!</title>
     <meta name='viewport' content='width=device-width, initial-scale=1'>
     <link rel='stylesheet' type='text/css' media='screen' href="{% static 'styles/main.css' %}">
-    <script src="{% static 'js/main.js' %}"></script>
+    <script>
+      (function () {
+        var theme = localStorage.getItem('app-theme') || 'valentine';
+        if (theme !== 'valentine' && theme !== 'study') {
+          theme = 'valentine';
+        }
+        document.documentElement.setAttribute('data-theme', theme);
+      })();
+    </script>
 </head>
 <body>
+    <button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle app theme">
+        <span class="theme-toggle-label">Mode</span>
+        <span id="theme-current-label">Valentine</span>
+        <span class="theme-toggle-track">
+            <span class="theme-toggle-knob"></span>
+        </span>
+    </button>
+
     {% block content %}
 
     {% endblock content %}
+    <script src="{% static 'js/theme.js' %}"></script>
 </body>
 <!-- <script type="text/javascript" src="{% static 'assets/AgoraRTC_N-4.8.0.js' %}"></script> -->
 
