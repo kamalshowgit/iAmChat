@@ -430,6 +430,50 @@ main {
     cursor: pointer;
 }
 
+#activities-panel {
+    width: min(98vw, 1800px);
+    margin: 2px auto 112px;
+    border: 1px solid var(--panel-stroke);
+    background: var(--panel-bg);
+    box-shadow: var(--panel-shadow);
+    border-radius: 18px;
+    padding: 12px 14px;
+}
+
+#activities-panel h3 {
+    margin: 0 0 6px;
+    font-size: 16px;
+}
+
+#activity-description {
+    margin: 0;
+    color: var(--text-muted);
+    font-weight: 500;
+}
+
+#activity-actions {
+    margin-top: 10px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+#activity-actions button {
+    border: 1px solid var(--panel-stroke);
+    border-radius: 999px;
+    background: linear-gradient(120deg, var(--accent-soft) 0%, var(--panel-bg) 100%);
+    color: var(--text-main);
+    font-weight: 700;
+    padding: 8px 12px;
+    cursor: pointer;
+}
+
+#focus-timer-display {
+    font-weight: 700;
+    color: var(--accent-strong);
+}
+
 #controls-wrapper {
     display: flex;
     justify-content: center;
@@ -572,6 +616,11 @@ html[data-theme='study'] .theme-toggle-knob {
         margin: 0 8px 100px;
         height: 320px;
     }
+
+    #activities-panel {
+        width: calc(100% - 16px);
+        margin: 0 8px 100px;
+    }
 }
 
 @media (max-width: 640px) {
@@ -616,6 +665,10 @@ html[data-theme='study'] .theme-toggle-knob {
         width: calc(100% - 20px);
         border-radius: 16px;
         justify-content: space-evenly;
+    }
+
+    #activity-actions {
+        gap: 6px;
     }
 
     .control-icon {

@@ -41,3 +41,17 @@ class ChatApiTests(TestCase):
         payload = get_response.json()
         self.assertEqual(len(payload['messages']), 1)
         self.assertEqual(payload['messages'][0]['message'], 'hello')
+
+
+class RoomSessionTests(TestCase):
+    def test_first_member_join_clears_old_chat_history(self):
+        ChatMessage.objects.create(room_name='ROOMX', uid='old', name='Old', message='stale message')
+        self.assertEqual(ChatMessage.objects.filter(room_name='ROOMX').count(), 1)
+
+        create_response = self.client.post(
+            '/create_member/',
+            data='{"name":"Alex","UID":"111","room_name":"ROOMX"}',
+            content_type='application/json',
+        )
+        self.assertEqual(create_response.status_code, 200)
+        self.assertEqual(ChatMessage.objects.filter(room_name='ROOMX').count(), 0)

@@ -6,10 +6,8 @@ let UID = sessionStorage.getItem('UID')
 
 let NAME = sessionStorage.getItem('name') || 'Guest'
 const isMobile = /android|iphone|ipad|ipod/i.test(navigator.userAgent)
-const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent)
-const preferredCodec = (isMobile || isSafari) ? 'h264' : 'vp8'
 
-const client = AgoraRTC.createClient({mode:'rtc', codec: preferredCodec})
+const client = AgoraRTC.createClient({mode:'rtc', codec: 'h264'})
 
 let localTracks = []
 let localAudioTrack = null
@@ -20,7 +18,29 @@ let lastMessageId = 0
 const CHAT_POLL_MS = 2000
 const videoStreams = document.getElementById('video-streams')
 const audioUnlockButton = document.getElementById('audio-unlock-btn')
+const newActivityButton = document.getElementById('new-activity-btn')
+const focusTimerButton = document.getElementById('focus-timer-btn')
+const activityDescription = document.getElementById('activity-description')
+const activityTitle = document.getElementById('activities-title')
+const focusTimerDisplay = document.getElementById('focus-timer-display')
 let pendingAudioTracks = []
+let focusTimerId = null
+let focusTimerEnd = null
+
+const ACTIVITIES = {
+    valentine: [
+        'Memory Spark: each person shares one favorite moment together.',
+        'Two Truths, One Dream: share two true stories and one future plan.',
+        'Compliment Relay: take turns giving sincere compliments for 2 minutes.',
+        'Playlist Pick: each person adds one song and explains the choice.',
+    ],
+    study: [
+        '15-minute Focus Sprint: cameras on, mics muted, then share progress.',
+        'Teach Back: explain one concept in 60 seconds each.',
+        'Flashcard Drill: ask each other 5 rapid questions.',
+        'Goal Check-in: set one micro-goal and report result after 10 minutes.',
+    ],
+}
 
 let setRoomError = (message) => {
     const errorNode = document.getElementById('room-error')
@@ -65,6 +85,50 @@ let tryUnlockAudio = async () => {
     }
 }
 
+let getActiveTheme = () => {
+    const theme = document.documentElement.getAttribute('data-theme')
+    return theme === 'study' ? 'study' : 'valentine'
+}
+
+let pickActivity = () => {
+    if (!activityDescription || !activityTitle) return
+    const theme = getActiveTheme()
+    const options = ACTIVITIES[theme]
+    const index = Math.floor(Math.random() * options.length)
+    activityTitle.textContent = theme === 'study' ? 'Study Activity' : 'Valentine Activity'
+    activityDescription.textContent = options[index]
+}
+
+let renderFocusTime = () => {
+    if (!focusTimerDisplay || !focusTimerEnd) return
+    const secondsLeft = Math.max(0, Math.floor((focusTimerEnd - Date.now()) / 1000))
+    const minutes = Math.floor(secondsLeft / 60).toString().padStart(2, '0')
+    const seconds = (secondsLeft % 60).toString().padStart(2, '0')
+    focusTimerDisplay.textContent = `${minutes}:${seconds}`
+    if (secondsLeft === 0) {
+        clearInterval(focusTimerId)
+        focusTimerId = null
+        focusTimerEnd = null
+        focusTimerButton.textContent = 'Start 15m Focus'
+    }
+}
+
+let toggleFocusTimer = () => {
+    if (!focusTimerDisplay || !focusTimerButton) return
+    if (focusTimerId) {
+        clearInterval(focusTimerId)
+        focusTimerId = null
+        focusTimerEnd = null
+        focusTimerDisplay.textContent = ''
+        focusTimerButton.textContent = 'Start 15m Focus'
+        return
+    }
+    focusTimerEnd = Date.now() + (15 * 60 * 1000)
+    focusTimerButton.textContent = 'Stop Focus'
+    renderFocusTime()
+    focusTimerId = setInterval(renderFocusTime, 1000)
+}
+
 let syncVideoLayout = () => {
     if (!videoStreams) return
     const count = videoStreams.querySelectorAll('.video-container').length
@@ -90,6 +154,22 @@ let applyVideoElementHints = (containerId, shouldMute = false) => {
     videoElement.setAttribute('webkit-playsinline', 'true')
     videoElement.autoplay = true
     videoElement.muted = shouldMute
+}
+
+let playRemoteVideoWithRetry = (user, targetId, attempt = 0) => {
+    if (!user || !user.videoTrack) return
+    try {
+        user.videoTrack.play(targetId)
+        applyVideoElementHints(targetId, false)
+    } catch (error) {
+        if (attempt >= 4) {
+            console.error('Remote video play failed after retries', error)
+            return
+        }
+        setTimeout(() => {
+            playRemoteVideoWithRetry(user, targetId, attempt + 1)
+        }, 180 * (attempt + 1))
+    }
 }
 
 let setupLocalTracks = async () => {
@@ -140,6 +220,7 @@ let joinAndDisplayLocalStream = async () => {
 
     client.on('user-published', handleUserJoined)
     client.on('user-left', handleUserLeft)
+    client.on('user-unpublished', handleUserUnpublished)
     client.on('connection-state-change', (currentState) => {
         if (currentState === 'DISCONNECTED') {
             setRoomError('Connection dropped. Reconnecting...')
@@ -177,7 +258,13 @@ let joinAndDisplayLocalStream = async () => {
         localVideoTrack.play(`user-${UID}`)
         applyVideoElementHints(`user-${UID}`, true)
     }
-    await client.publish(localTracks)
+    try {
+        await client.publish(localTracks)
+    } catch (error) {
+        console.error('Publish failed', error)
+        setRoomError('Could not publish your stream. Refresh and allow camera/mic permissions.')
+        return
+    }
     await fetchMessages(true)
     startChatPolling()
 }
@@ -206,12 +293,7 @@ let handleUserJoined = async (user, mediaType) => {
 
         videoStreams.insertAdjacentHTML('beforeend', player)
         syncVideoLayout()
-        try {
-            user.videoTrack.play(`user-${user.uid}`)
-            applyVideoElementHints(`user-${user.uid}`)
-        } catch (error) {
-            console.error('Remote video play failed', error)
-        }
+        playRemoteVideoWithRetry(user, `user-${user.uid}`)
     }
 
     if (mediaType === 'audio'){
@@ -220,6 +302,16 @@ let handleUserJoined = async (user, mediaType) => {
         } catch (error) {
             console.error('Remote audio play failed', error)
             queueAudioUnlock(user.audioTrack)
+        }
+    }
+}
+
+let handleUserUnpublished = (user, mediaType) => {
+    if (mediaType === 'video') {
+        let memberNode = document.getElementById(`user-container-${user.uid}`)
+        if (memberNode) {
+            memberNode.remove()
+            syncVideoLayout()
         }
     }
 }
@@ -424,6 +516,7 @@ joinAndDisplayLocalStream()
 syncVideoLayout()
 window.addEventListener('resize', syncVideoLayout)
 showAudioUnlock(false)
+pickActivity()
 
 document.getElementById('leave-btn').addEventListener('click', leaveAndRemoveLocalStream)
 document.getElementById('camera-btn').addEventListener('click', toggleCamera)
@@ -432,3 +525,14 @@ document.getElementById('chat-form').addEventListener('submit', sendMessage)
 if (audioUnlockButton) {
     audioUnlockButton.addEventListener('click', tryUnlockAudio)
 }
+if (newActivityButton) {
+    newActivityButton.addEventListener('click', pickActivity)
+}
+if (focusTimerButton) {
+    focusTimerButton.addEventListener('click', toggleFocusTimer)
+}
+
+const themeObserver = new MutationObserver(() => {
+    pickActivity()
+})
+themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] })

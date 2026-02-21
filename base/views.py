@@ -66,6 +66,12 @@ def createMember(request):
     if not name or not uid or not room_name:
         return JsonResponse({'error': 'name, UID, and room_name are required'}, status=400)
 
+    # Start every new room session with a clean chat history.
+    # A "new session" is when the first participant joins and there are no active members.
+    is_first_member = not RoomMember.objects.filter(room_name=room_name).exists()
+    if is_first_member:
+        ChatMessage.objects.filter(room_name=room_name).delete()
+
     member, _ = RoomMember.objects.update_or_create(
         uid=uid,
         room_name=room_name,
