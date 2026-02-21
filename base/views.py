@@ -48,7 +48,7 @@ def getToken(request):
         privilegeExpiredTs,
     )
 
-    return JsonResponse({'token': token, 'uid': uid})
+    return JsonResponse({'token': token, 'uid': uid, 'app_id': app_id})
 
 
 @csrf_exempt

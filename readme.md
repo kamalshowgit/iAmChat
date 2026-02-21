@@ -125,6 +125,17 @@ Happy coding! 🚀
    - `AGORA_APP_ID=<your-id>`
    - `AGORA_APP_CERTIFICATE=<your-cert>`
 
+   Example snippet in `/var/www/<your-username>_pythonanywhere_com_wsgi.py`:
+   ```python
+   import os
+   os.environ["DJANGO_DEBUG"] = "False"
+   os.environ["DJANGO_ALLOWED_HOSTS"] = "<your-username>.pythonanywhere.com"
+   os.environ["DJANGO_CSRF_TRUSTED_ORIGINS"] = "https://<your-username>.pythonanywhere.com"
+   os.environ["SECRET_KEY"] = "<your-secret-key>"
+   os.environ["AGORA_APP_ID"] = "<your-agora-app-id>"
+   os.environ["AGORA_APP_CERTIFICATE"] = "<your-agora-app-certificate>"
+   ```
+
 4. Run migrations and collect static:
    ```bash
    python manage.py migrate

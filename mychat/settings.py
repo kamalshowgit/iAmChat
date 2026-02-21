@@ -25,6 +25,13 @@ def env_bool(name, default=False):
     return os.getenv(name, str(default)).lower() in {'1', 'true', 'yes', 'on'}
 
 
+def env_list(name, default=''):
+    return [item.strip() for item in os.getenv(name, default).split(',') if item.strip()]
+
+
+PYA_HOST = f"{os.getenv('USER', '').strip()}.pythonanywhere.com" if os.getenv('USER') else ''
+
+
 # SECURITY WARNING: keep the secret key used in production secret!
 SECRET_KEY = os.getenv(
     'SECRET_KEY',
@@ -34,15 +41,13 @@ SECRET_KEY = os.getenv(
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = env_bool('DJANGO_DEBUG', False)
 
-ALLOWED_HOSTS = [
-    host.strip() for host in os.getenv('DJANGO_ALLOWED_HOSTS', '127.0.0.1,localhost').split(',') if host.strip()
-]
+allowed_hosts_default = '127.0.0.1,localhost'
+if PYA_HOST:
+    allowed_hosts_default = f'{allowed_hosts_default},{PYA_HOST}'
+ALLOWED_HOSTS = env_list('DJANGO_ALLOWED_HOSTS', allowed_hosts_default)
 
-CSRF_TRUSTED_ORIGINS = [
-    origin.strip()
-    for origin in os.getenv('DJANGO_CSRF_TRUSTED_ORIGINS', '').split(',')
-    if origin.strip()
-]
+trusted_origins_default = f'https://{PYA_HOST}' if PYA_HOST else ''
+CSRF_TRUSTED_ORIGINS = env_list('DJANGO_CSRF_TRUSTED_ORIGINS', trusted_origins_default)
 
 
 # Application definition

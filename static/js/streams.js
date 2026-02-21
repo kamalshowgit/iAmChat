@@ -1,5 +1,5 @@
 
-const APP_ID = 'API_IDs'
+const APP_ID = sessionStorage.getItem('appId')
 const TOKEN = sessionStorage.getItem('token')
 const CHANNEL = sessionStorage.getItem('room')
 let UID = sessionStorage.getItem('UID')
@@ -15,6 +15,11 @@ let lastMessageId = 0
 const CHAT_POLL_MS = 2000
 
 let joinAndDisplayLocalStream = async () => {
+    if (!APP_ID || !TOKEN || !CHANNEL || !UID) {
+        window.open('/', '_self')
+        return
+    }
+
     document.getElementById('room-name').innerText = CHANNEL
 
     client.on('user-published', handleUserJoined)

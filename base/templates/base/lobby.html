@@ -25,6 +25,7 @@
         <div class="form-field">
           <input type="submit" value="Join Stream" />
         </div>
+        <p id="form-error" style="display:none;color:#d24c55;font-weight:700;margin:0;"></p>
       </div>
     </form>
   </section>
@@ -36,17 +37,43 @@
 
 let handleSubmit = async (e) => {
     e.preventDefault()
-    let room = e.target.room.value.toUpperCase()
-    let name = e.target.name.value
+    const errorElement = document.getElementById('form-error')
+    let room = e.target.room.value.trim().toUpperCase()
+    let name = e.target.name.value.trim()
 
-    let response = await fetch(`/get_token/?channel=${room}`)
-    let data = await response.json()
+    errorElement.style.display = 'none'
+    errorElement.textContent = ''
+
+    if (!room || !name) {
+      errorElement.textContent = 'Room tag and name are required.'
+      errorElement.style.display = 'block'
+      return
+    }
+
+    let response
+    let data
+    try {
+      response = await fetch(`/get_token/?channel=${encodeURIComponent(room)}`)
+      data = await response.json()
+    } catch (error) {
+      errorElement.textContent = 'Network error. Please try again.'
+      errorElement.style.display = 'block'
+      return
+    }
+
+    if (!response.ok || !data.token || !data.uid || !data.app_id) {
+      errorElement.textContent = (data && data.error) || 'Failed to connect. Please try again.'
+      errorElement.style.display = 'block'
+      return
+    }
 
     let UID = data.uid
     let token = data.token
+    let appId = data.app_id
 
     sessionStorage.setItem('UID', UID)
     sessionStorage.setItem('token', token)
+    sessionStorage.setItem('appId', appId)
     sessionStorage.setItem('room', room)
     sessionStorage.setItem('name', name)
 
